@@ -1,0 +1,170 @@
+---
+title: "Embedded Programming: ATmega328P"
+description: "Learn bare-metal embedded C programming on the ATmega328P using an Arduino Nano. Nine lessons, nine real builds, from a Morse code beacon to a battery-powered door alert. No Arduino IDE, no libraries, just registers, datasheets, and understanding."
+pubDate: 2026-03-14
+tags: ["embedded-systems", "atmega328p", "avr", "bare-metal", "c-programming", "arduino-nano", "microcontroller", "registers", "uart", "spi", "i2c", "adc"]
+excerpt: "Master bare-metal embedded C programming on the ATmega328P. Each lesson builds a real project using only registers and datasheets. Covers GPIO, timers, interrupts, UART, SPI, I2C, ADC, and power management. The foundation every embedded engineer needs."
+heroImage: "https://cdn.siliconwit.com/education/pcb-design-kicad/pcb-design-kicad.png"
+---
+
+import Copyright from '../../../../components/Copyright.astro';
+import TawkWidget from '../../../../components/TawkWidget.astro';
+import { Card, CardGrid, Badge, Steps } from '@astrojs/starlight/components';
+
+Learn embedded systems from the ground up by programming the ATmega328P in pure C. No Arduino IDE, no abstraction layers. Every register write is intentional, every peripheral is understood at the datasheet level. Each lesson builds a real, working project with minimal components. #EmbeddedSystems #AVR #BareMetal
+
+## Why Bare-Metal ATmega328P?
+
+<CardGrid>
+  <Card title="Understand, Don't Abstract" icon="open-book">
+    The Arduino IDE hides what matters. Writing to DDRx, PORTx, and PINx directly teaches you how microcontrollers actually work. This knowledge transfers to every chip you will ever use.
+  </Card>
+
+  <Card title="Minimal, Affordable Hardware" icon="approve-check">
+    An Arduino Nano costs under $5. A breadboard and a handful of components is all you need. No expensive dev kits, no debugger required to start. You can begin today.
+  </Card>
+
+  <Card title="The Datasheet Is Your Teacher" icon="document">
+    Every lesson references the ATmega328P datasheet directly. You learn to read register descriptions, timing diagrams, and electrical specs. This is the skill that separates hobbyists from engineers.
+  </Card>
+
+  <Card title="Real Projects, Not Blink Tutorials" icon="rocket">
+    Each lesson produces something purposeful: a temperature logger, a weather station, a reaction time tester. You build things worth keeping while learning each peripheral.
+  </Card>
+</CardGrid>
+
+## Course Structure
+
+Every lesson follows the same cycle:
+
+<Steps>
+1. **The Problem**
+   A real, specific thing to build. Not "learn about timers" but "build a precision metronome."
+
+2. **The Registers**
+   Which registers control this peripheral, what each bit does, and why. Direct datasheet references throughout.
+
+3. **The Code**
+   Bare-metal C, compiled with avr-gcc, flashed with avrdude. Every line explained at the register level.
+
+4. **The Build**
+   Wire it on a breadboard, flash, and test. Each lesson adds one or two new components to your growing kit.
+
+5. **Going Further**
+   Challenges and extensions for those who want to push deeper into the peripheral.
+</Steps>
+
+## Lessons
+
+<CardGrid>
+  <Card title="Lesson 1: AVR Toolchain and Bare-Metal C" icon="star">
+    [AVR Toolchain and Bare-Metal Setup](./avr-toolchain-bare-metal-setup). Install avr-gcc, avrdude, and write your first Makefile. Build a Morse code beacon that blinks your name on an LED. First contact with register-level programming.
+    **Build:** Morse code beacon. **Parts:** Nano, breadboard, LED, 220R resistor.
+  </Card>
+
+  <Card title="Lesson 2: GPIO Registers and Digital I/O" icon="document">
+    [GPIO Registers and Digital I/O](./gpio-registers-digital-io). Master DDRx, PORTx, PINx registers and bit manipulation. Build an electronic dice with button input and random LED patterns using a simple LFSR.
+    **Build:** Electronic dice. **Parts:** 3 more LEDs, push button, 10K resistor.
+  </Card>
+
+  <Card title="Lesson 3: Timer/Counter Fundamentals" icon="document">
+    [Timer/Counter Fundamentals](./timer-counter-fundamentals). Explore Timer0, Timer1, and Timer2 in Normal, CTC, and PWM modes. Prescalers, overflow interrupts, output compare. Build a tunable tone generator with precise frequencies.
+    **Build:** Tunable tone generator. **Parts:** Piezo buzzer.
+  </Card>
+
+  <Card title="Lesson 4: Interrupts and Event-Driven Design" icon="document">
+    [Interrupts and Event-Driven Design](./interrupts-event-driven-design). Configure INT0/INT1, pin-change interrupts, and timer interrupts. Learn ISR design patterns, volatile variables, and atomic blocks. Build a reaction time tester.
+    **Build:** Reaction time tester. **Parts:** Reuse existing.
+  </Card>
+
+  <Card title="Lesson 5: UART Serial Communication" icon="document">
+    [UART Serial Communication](./uart-serial-communication). Set up the USART peripheral from scratch: baud rate calculation, TX/RX registers, ring buffers, printf redirect. Build a temperature logger that streams CSV to your PC.
+    **Build:** Temperature logger with CSV export. **Parts:** 10K thermistor.
+  </Card>
+
+  <Card title="Lesson 6: SPI Protocol and Peripheral Interfacing" icon="document">
+    [SPI Protocol and Peripheral Interfacing](./spi-protocol-peripheral-interfacing). Master the SPI peripheral: SPCR, SPSR, clock polarity/phase, master/slave select. Write an SSD1306 OLED driver from scratch. Build a real-time clock display.
+    **Build:** OLED clock display. **Parts:** SSD1306 OLED (SPI).
+  </Card>
+
+  <Card title="Lesson 7: I2C Bus and Sensor Integration" icon="document">
+    [I2C Bus and Sensor Integration](./i2c-bus-sensor-integration). Implement I2C (TWI) communication: start/stop conditions, addressing, ACK/NACK, multi-byte reads. Interface a BME280 for temperature, humidity, and pressure on your OLED.
+    **Build:** Mini weather station. **Parts:** BME280 module.
+  </Card>
+
+  <Card title="Lesson 8: ADC and Analog Signal Acquisition" icon="document">
+    [ADC and Analog Signal Acquisition](./adc-analog-signal-acquisition). Configure the 10-bit ADC: reference voltage selection, channel multiplexing, free-running vs single conversion, noise reduction techniques. Build a light-tracking indicator.
+    **Build:** Light-tracking indicator. **Parts:** 2 LDRs, 2 resistors.
+  </Card>
+
+  <Card title="Lesson 9: Power Management and Watchdog" icon="document">
+    [Power Management and Watchdog](./power-management-watchdog-sleep). Explore all sleep modes (Idle through Power-down), watchdog timer configuration, BOD disable, and wakeup sources. Build a battery-powered door open alert.
+    **Build:** Battery-powered door alert. **Parts:** 2xAA battery holder, reed switch.
+  </Card>
+</CardGrid>
+
+## Parts Kit
+
+Everything you need for the entire course, beyond the Arduino Nano:
+
+| Part | Quantity | First Used | Approximate Cost |
+|------|----------|------------|-----------------|
+| Arduino Nano (ATmega328P) | 1 | Lesson 1 | $3-5 |
+| Breadboard + jumper wires | 1 set | Lesson 1 | $3-5 |
+| LEDs (assorted colors) | 4 | Lesson 1 | $1 |
+| 220R resistors | 4 | Lesson 1 | $0.50 |
+| 10K resistors | 2 | Lesson 2 | $0.50 |
+| Push button | 1 | Lesson 2 | $0.25 |
+| Piezo buzzer | 1 | Lesson 3 | $0.50 |
+| 10K NTC thermistor | 1 | Lesson 5 | $0.50 |
+| SSD1306 OLED display (SPI) | 1 | Lesson 6 | $3-4 |
+| BME280 sensor module | 1 | Lesson 7 | $2-3 |
+| LDR photoresistors | 2 | Lesson 8 | $0.50 |
+| Reed switch | 1 | Lesson 9 | $0.50 |
+| 2xAA battery holder | 1 | Lesson 9 | $0.50 |
+
+**Total estimated cost: $15-22** (including the Nano)
+
+## Skill Progression
+
+| Skill | Lessons 1-3 | Lessons 4-5 | Lessons 6-7 | Lessons 8-9 |
+|-------|------------|------------|------------|------------|
+| **Registers** | GPIO, Timer/Counter | Interrupt vectors, USART | SPI, TWI (I2C) | ADC, sleep/watchdog |
+| **Patterns** | Polling, bit manipulation | ISR design, ring buffers | Protocol drivers | Signal processing, low power |
+| **Hardware** | LEDs, buttons, buzzer | Thermistor, serial | OLED display, BME280 sensor | LDRs, battery power |
+| **Tools** | avr-gcc, avrdude, make | Serial monitor | Logic analyzer (optional) | Multimeter for current draw |
+
+## Prerequisites
+
+<Badge text="No prior embedded experience needed" variant="tip" />
+
+**You should be comfortable with:**
+- C programming basics (variables, functions, loops, bitwise operators)
+- Using a terminal/command line
+- Basic electronics (voltage, current, resistance, LEDs, resistors)
+
+**Helpful but not required:**
+- Arduino experience (we deliberately move beyond it)
+- Our [PCB Design with KiCad](/education/pcb-design-kicad/) course (uses the same chip)
+
+## Getting Started
+
+<Steps>
+1. **Get an Arduino Nano** (or any ATmega328P board) and a breadboard with jumper wires.
+
+2. **Install the AVR toolchain**: avr-gcc, avr-libc, avrdude. Lesson 1 walks through setup on Linux, macOS, and Windows.
+
+3. **Download the ATmega328P datasheet** from [Microchip](https://www.microchip.com/en-us/product/ATmega328P). You will reference it in every lesson.
+
+4. **Start with Lesson 1.** Each lesson builds on the previous one. Work through them in order.
+
+5. **Build every project.** Reading code is not the same as wiring a circuit and watching it work.
+</Steps>
+
+:::tip[Already know Arduino?]
+Good. This course will show you what the Arduino core does behind `digitalWrite()`, `analogRead()`, `Serial.begin()`, and `attachInterrupt()`. After this, you will understand exactly what your Arduino code compiles into, and you will be able to write faster, smaller, more predictable firmware.
+:::
+
+<Copyright />
+
+<TawkWidget />
