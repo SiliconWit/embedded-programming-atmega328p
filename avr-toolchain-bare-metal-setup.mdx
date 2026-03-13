@@ -1,0 +1,367 @@
+---
+title: "AVR Toolchain and Bare-Metal C Setup"
+description: "Set up a complete AVR development environment with avr-gcc, avrdude, and Makefiles. Program an Arduino Nano directly in C without the Arduino IDE. Build a Morse code beacon that blinks your name on an LED."
+contributors: "sam-macharia,lawrence-langat"
+pubDate: 2026-01-15
+tags: ["avr", "toolchain", "bare-metal", "c-programming", "makefile", "avrdude", "avr-gcc", "arduino-nano"]
+excerpt: "Set up a complete AVR development environment with avr-gcc, avrdude, and Makefiles. Program an Arduino Nano directly in C without the Arduino IDE. Build a Morse code beacon that blinks your name on an LED."
+heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-LED-resistor.png"
+---
+
+import TawkWidget from '../../../../components/TawkWidget.astro';
+import UniversalContentContributors from '../../../../components/UniversalContentContributors.astro';
+import InArticleAd from '../../../../components/InArticleAd.astro';
+import Copyright from '../../../../components/Copyright.astro';
+import BionicText from '../../../../components/BionicText.astro';
+import TailwindWrapper from '../../../../components/TailwindWrapper.jsx';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/starlight/components';
+
+<UniversalContentContributors 
+  contributors={frontmatter.contributors}
+/>
+
+
+
+import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
+
+Before you can write meaningful firmware, you need a toolchain you actually understand. In this lesson you will install avr-gcc, avrdude, and a handful of command-line utilities, then write a Makefile that compiles, links, and flashes C code onto an Arduino Nano or Uno. No Arduino IDE, no hidden abstractions. The project is a Morse code beacon: your LED blinks out your name in dots and dashes, proving you control every byte that lands on the chip. #AVR #BareMetal #CProgramming
+
+:::note[Nano or Uno?]
+Both the Arduino Nano and Arduino Uno use the same ATmega328P chip with identical pin mapping. Every pin number, register name, and code example in this course works on either board. We show the Nano in wiring diagrams because it fits directly into a breadboard, but you can follow along with an Uno and jumper wires just as easily.
+:::
+
+### ATmega328P Pinout Reference
+
+This pinout diagram shows every pin on the ATmega328P with its port name, Arduino pin number, and alternate functions. You will refer back to this throughout the course whenever you need to map between register names in code (like PB5 or PD2) and physical pin numbers on your board.
+
+![ATmega328P TQFP-32 Pinout Diagram](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/ATmega328P-TQFP-32-pinout.png)
+
+Download the full ATmega328P datasheet from [Microchip (PDF)](https://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-7810-Automotive-Microcontrollers-ATmega328P_Datasheet.pdf) ([archive copy](https://drive.google.com/file/d/1fMLGkKZbYLITJehfF9tpWpZe6VMmuEL0/view?usp=sharing)). Keep it open as you work through this course. Every register name, bit field, and timing parameter comes directly from this document.
+
+## What We Are Building
+
+<Card title="Morse Code Beacon" icon="star">
+A bare-metal C program that encodes any string into International Morse Code and blinks it on the built-in LED connected to PB5 (pin 13). Dots, dashes, and inter-character gaps are all timed from a single delay function you write yourself. The entire build, flash, and fuse-check workflow runs from a single `make flash` command. No external wiring is needed for this first project.
+</Card>
+
+**Project specifications:**
+
+| Parameter | Value |
+|-----------|-------|
+| MCU | ATmega328P (on Arduino Nano or Uno) |
+| Clock | 16 MHz (external crystal) |
+| Toolchain | avr-gcc, avr-objcopy, avrdude |
+| Build system | GNU Make |
+| Programmer | USB serial (CH340/FTDI on Nano, ATmega16U2 on Uno) |
+| Output | Built-in LED on PB5 (pin 13) |
+| Dot duration | 200 ms |
+| Dash duration | 600 ms |
+| Optimization | -Os (size) |
+
+### Parts for This Lesson
+
+| Ref | Component | Quantity | Notes |
+|-----|-----------|----------|-------|
+| 1 | Arduino Nano or Uno (ATmega328P) | 1 | Nano clone with CH340 works fine |
+| 2 | USB cable | 1 | Mini-B for most Nanos, Type-B for Uno |
+
+The built-in LED on pin 13 is all you need. No breadboard, no external components. Just plug in the USB cable and flash.
+
+:::tip[Optional: external LED for the exercises]
+Later in this lesson, an exercise asks you to add a second LED on a different pin. For that you will need a breadboard, an LED, a 220 ohm resistor, and a few jumper wires. You can grab these now or come back for them later.
+:::
+
+## Installing the AVR Toolchain
+
+<InArticleAd />
+
+
+<Tabs>
+<TabItem label="Linux">
+```bash
+# Ubuntu / Debian
+sudo apt update
+sudo apt install gcc-avr avr-libc avrdude make
+
+# Fedora
+sudo dnf install avr-gcc avr-libc avrdude make
+
+# Arch
+sudo pacman -S avr-gcc avr-libc avrdude make
+```
+
+Verify the installation:
+
+```bash
+avr-gcc --version
+avrdude -?
+```
+</TabItem>
+<TabItem label="macOS">
+```bash
+# Install via Homebrew
+brew tap osx-cross/avr
+brew install avr-gcc avrdude
+```
+
+Verify the installation:
+
+```bash
+avr-gcc --version
+avrdude -?
+```
+</TabItem>
+<TabItem label="Windows">
+Download and install [WinAVR](http://winavr.sourceforge.net/) or use MSYS2:
+
+```bash
+# MSYS2 approach
+pacman -S mingw-w64-x86_64-avr-gcc mingw-w64-x86_64-avr-libc mingw-w64-x86_64-avrdude
+```
+
+Make sure `avr-gcc` and `avrdude` are on your PATH. Open a new terminal and verify:
+
+```bash
+avr-gcc --version
+avrdude -?
+```
+</TabItem>
+</Tabs>
+
+## Project Structure
+
+<InArticleAd />
+
+
+Create a project directory with the following layout:
+
+<FileTree>
+- morse-beacon/
+  - main.c
+  - Makefile
+</FileTree>
+
+## Writing the Makefile
+
+<InArticleAd />
+
+
+A Makefile automates the compile, link, convert, and flash steps so you only type `make flash`. Here is the complete Makefile for this project. Every line is intentional: MCU and F_CPU set the target, CFLAGS enables warnings and size optimization, and the flash target calls avrdude with the correct programmer and port.
+
+```makefile
+# Morse Beacon Makefile
+MCU      = atmega328p
+F_CPU    = 16000000UL
+BAUD     = 115200
+PORT     = /dev/ttyUSB0
+
+CC       = avr-gcc
+OBJCOPY  = avr-objcopy
+CFLAGS   = -mmcu=$(MCU) -DF_CPU=$(F_CPU) -Os -Wall -Wextra -std=c11
+TARGET   = morse
+
+all: $(TARGET).hex
+
+$(TARGET).elf: main.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(TARGET).hex: $(TARGET).elf
+	$(OBJCOPY) -O ihex -R .eeprom $< $@
+	avr-size --mcu=$(MCU) -C $<
+
+flash: $(TARGET).hex
+	avrdude -c arduino -p $(MCU) -P $(PORT) -b $(BAUD) -U flash:w:$<
+
+fuses:
+	avrdude -c arduino -p $(MCU) -P $(PORT) -b $(BAUD) -U lfuse:r:-:h -U hfuse:r:-:h -U efuse:r:-:h
+
+clean:
+	rm -f $(TARGET).elf $(TARGET).hex
+
+.PHONY: all flash fuses clean
+```
+
+The Makefile defaults to `/dev/ttyUSB0`, which is typical on Linux. On macOS the port is usually `/dev/cu.usbserial-XXX`, and on Windows it is something like `COM3`. Adjust the PORT variable to match your system.
+
+## Writing main.c
+
+<InArticleAd />
+
+
+The firmware does three things: define a Morse code lookup table, implement a blocking delay using a busy loop calibrated to F_CPU, and loop through each character of a message string to blink the LED. The entire program fits comfortably under 1 KB of flash.
+
+```c
+#define F_CPU 16000000UL
+
+#include <avr/io.h>
+#include <util/delay.h>
+#include <string.h>
+#include <ctype.h>
+
+/* Morse timing (ms) */
+#define DOT_MS    200
+#define DASH_MS   600
+#define SYMBOL_GAP  200   /* gap between dots/dashes in a letter */
+#define LETTER_GAP  600   /* gap between letters */
+#define WORD_GAP   1400   /* gap between words */
+
+/* Morse lookup: A-Z encoded as strings of '.' and '-' */
+static const char *morse[] = {
+    ".-",   "-...", "-.-.", "-..",  ".",    "..-.", /* A-F */
+    "--.",   "....", "..",   ".---", "-.-",  ".-..", /* G-L */
+    "--",   "-.",   "---",  ".--.", "--.-", ".-.",  /* M-R */
+    "...",   "-",   "..-",  "...-", ".--",  "-..-", /* S-X */
+    "-.--", "--.."                                   /* Y-Z */
+};
+
+static void led_on(void)  { PORTB |=  (1 << PB5); }
+static void led_off(void) { PORTB &= ~(1 << PB5); }
+
+static void delay_ms(uint16_t ms)
+{
+    while (ms--) _delay_ms(1);
+}
+
+static void blink_dot(void)
+{
+    led_on();
+    delay_ms(DOT_MS);
+    led_off();
+    delay_ms(SYMBOL_GAP);
+}
+
+static void blink_dash(void)
+{
+    led_on();
+    delay_ms(DASH_MS);
+    led_off();
+    delay_ms(SYMBOL_GAP);
+}
+
+static void send_char(char c)
+{
+    if (c == ' ') {
+        delay_ms(WORD_GAP);
+        return;
+    }
+    c = toupper((unsigned char)c);
+    if (c < 'A' || c > 'Z') return;
+
+    const char *code = morse[c - 'A'];
+    for (uint8_t i = 0; code[i]; i++) {
+        if (code[i] == '.') blink_dot();
+        else                blink_dash();
+    }
+    delay_ms(LETTER_GAP);
+}
+
+int main(void)
+{
+    /* Set PB5 as output */
+    DDRB |= (1 << PB5);
+
+    const char *message = "SAM";  /* Change to your name */
+
+    while (1) {
+        for (uint8_t i = 0; i < strlen(message); i++) {
+            send_char(message[i]);
+        }
+        delay_ms(WORD_GAP * 2);  /* Long pause before repeating */
+    }
+}
+```
+
+## Compiling and Flashing
+
+<InArticleAd />
+
+
+<Steps>
+1. Connect the Arduino Nano to your computer via USB.
+
+2. Find your serial port:
+   ```bash
+   # Linux
+   ls /dev/ttyUSB*
+
+   # macOS
+   ls /dev/cu.usb*
+
+   # Windows (in Device Manager or)
+   mode
+   ```
+
+3. Update the PORT variable in your Makefile if needed.
+
+4. Compile and flash:
+   ```bash
+   make flash
+   ```
+
+5. Watch the built-in LED on pin 13. It should blink your name in Morse code, pause, and repeat. No external wiring needed.
+</Steps>
+
+## Reading the Fuse Bits
+
+<InArticleAd />
+
+
+Fuse bits configure low-level chip behavior: clock source, brown-out detection, boot size, and more. They are stored in non-volatile memory separate from flash. Reading them helps you confirm the board is running from the external 16 MHz crystal as expected.
+
+```bash
+make fuses
+```
+
+Typical Nano/Uno fuse values:
+
+| Fuse | Value | Meaning |
+|------|-------|---------|
+| lfuse | 0xFF | External full-swing crystal, slowly rising power |
+| hfuse | 0xDA | 512-word bootloader, SPI programming enabled |
+| efuse | 0xFD | BOD at 2.7V |
+
+:::caution
+Do not write fuse bits unless you know exactly what you are doing. Incorrect fuse settings can make the chip unprogrammable without a high-voltage programmer.
+:::
+
+## Understanding the Build Output
+
+<InArticleAd />
+
+
+When you run `make`, avr-size prints a memory usage summary. The ATmega328P has 32 KB of flash, 2 KB of SRAM, and 1 KB of EEPROM. Your Morse beacon should use well under 1 KB of flash and only a few bytes of RAM. Getting comfortable reading these numbers early will save you from mysterious crashes later when projects grow larger.
+
+```
+AVR Memory Usage
+----------------
+Program:     512 bytes (1.6% Full)
+Data:         9 bytes (0.4% Full)
+```
+
+## Exercises
+
+<InArticleAd />
+
+
+1. Change the message string to your full name and observe the LED pattern. Time it with a stopwatch to verify the dot and dash durations.
+2. Add Morse codes for digits 0 through 9 to the lookup table. The pattern is systematic: "0" is `-----`, "1" is `.----`, and so on.
+3. Modify the Makefile to produce a `.bin` file in addition to `.hex`. Use `avr-objcopy -O binary` for this.
+4. Add an external LED on PB0 (pin 8): connect the LED's longer leg (anode) to pin 8 through a 220 ohm resistor, and the shorter leg (cathode, the one with the flat edge on the LED body) to GND. Set PB0 as output with `DDRB |= (1 << PB0)` and blink both LEDs with inverted patterns: the built-in LED on while the external LED is off, and vice versa.
+
+![Arduino Nano with external LED and 220 ohm resistor on pin 8](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-LED-resistor.png)
+
+## Summary
+
+<InArticleAd />
+
+
+You now have a working bare-metal AVR development environment. You can compile C code with avr-gcc, convert it to Intel HEX format, flash it with avrdude, and read fuse bits. The Makefile gives you a repeatable one-command workflow. Every lesson that follows builds on this same toolchain, so make sure `make flash` works reliably before moving on.
+
+<EmbeddedProgrammingAtmega328pComments />
+
+
+
+<InArticleAd />
+<TawkWidget />
+<Copyright />

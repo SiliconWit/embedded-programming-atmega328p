@@ -1,0 +1,378 @@
+---
+title: "SPI Protocol and Peripheral Interfacing"
+description: "Master the ATmega328P SPI peripheral by writing an SSD1306 OLED driver from scratch. Display a real-time clock on a 128x64 OLED, covering clock polarity, phase, data framing, and display buffer management."
+contributors: "sam-macharia,lawrence-langat"
+pubDate: 2026-02-19
+tags: ["spi", "oled", "ssd1306", "protocol", "peripheral", "atmega328p", "avr"]
+excerpt: "Master the ATmega328P SPI peripheral by writing an SSD1306 OLED driver from scratch. Display a real-time clock on a 128x64 OLED, covering clock polarity, phase, data framing, and display buffer management."
+heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/medium-ATmega328P-TQFP-32.png"
+---
+
+import TawkWidget from '../../../../components/TawkWidget.astro';
+import UniversalContentContributors from '../../../../components/UniversalContentContributors.astro';
+import InArticleAd from '../../../../components/InArticleAd.astro';
+import Copyright from '../../../../components/Copyright.astro';
+import BionicText from '../../../../components/BionicText.astro';
+import TailwindWrapper from '../../../../components/TailwindWrapper.jsx';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/starlight/components';
+
+<UniversalContentContributors 
+  contributors={frontmatter.contributors}
+/>
+
+
+
+import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
+
+SPI is the fastest standard serial bus on most microcontrollers, and it is the interface of choice for displays, SD cards, and high-speed sensors. In this lesson you will configure the ATmega328P hardware SPI peripheral, understand clock polarity and phase, and write a complete driver for the SSD1306 OLED display. The project is a real-time clock that counts hours, minutes, and seconds on a 128x64 pixel screen, rendered with a custom bitmap font. Every byte that reaches the display passes through code you wrote yourself. #SPI #OLED #SSD1306
+
+## What We Are Building
+
+<Card title="Real-Time Clock on OLED Display" icon="star">
+A 128x64 OLED display driven over SPI shows a running clock in large digits (HH:MM:SS format). The clock starts at 00:00:00 on power-up and counts using a Timer1 interrupt for accurate one-second ticks. The SSD1306 driver handles initialization, page addressing, and a 1024-byte framebuffer that gets flushed to the display once per second. A simple 5x7 bitmap font is included for rendering digits and the colon separator.
+</Card>
+
+**Project specifications:**
+
+| Parameter | Value |
+|-----------|-------|
+| MCU | ATmega328P (on Arduino Nano or Uno) |
+| Display | SSD1306 128x64 OLED (SPI variant) |
+| SPI clock | F_CPU/4 = 4 MHz |
+| SPI mode | Mode 0 (CPOL=0, CPHA=0) |
+| Framebuffer | 1024 bytes (128x64 / 8) |
+| Font | 5x7 pixel bitmap, digits and colon |
+| Update rate | 1 Hz |
+| Timekeeping | Timer1 CTC, 1 second interrupt |
+
+### Parts for This Lesson
+
+| Ref | Component | Quantity | Notes |
+|-----|-----------|----------|-------|
+| 1 | Arduino Nano or Uno (ATmega328P) | 1 | From previous lessons |
+| 2 | Breadboard | 1 | From previous lessons |
+| 3 | SSD1306 OLED 128x64 (SPI) | 1 | 7-pin SPI variant with D/C pin |
+| 4 | Jumper wires | ~7 | Male-to-female or male-to-male |
+
+## SPI Protocol Fundamentals
+
+<InArticleAd />
+
+
+SPI uses four signals: MOSI (Master Out Slave In), MISO (Master In Slave Out), SCK (Serial Clock), and SS (Slave Select, active low). The master generates the clock and drives MOSI while reading MISO. Data is exchanged simultaneously in both directions, one bit per clock edge. The slave is selected by pulling its SS line low.
+
+| Signal | ATmega328P Pin | Arduino Pin | Direction |
+|--------|---------------|-------------|-----------|
+| MOSI | PB3 | D11 | Master to Slave |
+| MISO | PB4 | D12 | Slave to Master |
+| SCK | PB5 | D13 | Master output |
+| SS | PB2 | D10 | Master output (active low) |
+
+### Clock Polarity and Phase
+
+| SPI Mode | CPOL | CPHA | Clock Idle | Data Sampled On |
+|----------|------|------|------------|-----------------|
+| 0 | 0 | 0 | Low | Rising edge |
+| 1 | 0 | 1 | Low | Falling edge |
+| 2 | 1 | 0 | High | Falling edge |
+| 3 | 1 | 1 | High | Rising edge |
+
+The SSD1306 uses Mode 0 (CPOL=0, CPHA=0). Always check the peripheral datasheet to determine the correct mode.
+
+## SPI Register Configuration
+
+<InArticleAd />
+
+
+The ATmega328P SPI peripheral is controlled by two registers. SPCR (SPI Control Register) enables the peripheral, sets master/slave mode, clock polarity/phase, and the prescaler. SPSR (SPI Status Register) contains the transfer-complete flag (SPIF) and an optional double-speed bit (SPI2X).
+
+```c
+static void spi_init(void)
+{
+    /* Set MOSI, SCK, SS as outputs */
+    DDRB |= (1 << PB3) | (1 << PB5) | (1 << PB2);
+
+    /* Enable SPI, Master mode, clock = F_CPU/4 (4 MHz) */
+    SPCR = (1 << SPE) | (1 << MSTR);
+    /* Mode 0 is default (CPOL=0, CPHA=0) */
+}
+
+static uint8_t spi_transfer(uint8_t data)
+{
+    SPDR = data;
+    while (!(SPSR & (1 << SPIF)));  /* Wait for transfer complete */
+    return SPDR;
+}
+```
+
+## SSD1306 OLED Wiring
+
+<InArticleAd />
+
+
+The 7-pin SPI OLED module has the following connections:
+
+| OLED Pin | Function | Arduino Nano Pin | ATmega328P Pin |
+|----------|----------|-----------------|----------------|
+| GND | Ground | GND | GND |
+| VCC | Power (3.3V or 5V) | 5V | VCC |
+| D0 (CLK) | SPI Clock | D13 | PB5 (SCK) |
+| D1 (MOSI) | SPI Data | D11 | PB3 (MOSI) |
+| RES | Reset | D8 | PB0 |
+| DC | Data/Command | D9 | PB1 |
+| CS | Chip Select | D10 | PB2 (SS) |
+
+## SSD1306 Driver
+
+<InArticleAd />
+
+
+The SSD1306 distinguishes between commands and data using the D/C pin: low for commands, high for pixel data. The initialization sequence configures the display for 128x64 resolution with horizontal addressing mode. After initialization, you write pixel data as a 1024-byte stream (128 columns by 8 pages, each page is 8 pixels tall).
+
+```c
+#define OLED_DC   PB1
+#define OLED_RST  PB0
+#define OLED_CS   PB2
+
+static void oled_cmd(uint8_t cmd)
+{
+    PORTB &= ~(1 << OLED_DC);   /* Command mode */
+    PORTB &= ~(1 << OLED_CS);   /* Select */
+    spi_transfer(cmd);
+    PORTB |= (1 << OLED_CS);    /* Deselect */
+}
+
+static void oled_data(const uint8_t *buf, uint16_t len)
+{
+    PORTB |= (1 << OLED_DC);    /* Data mode */
+    PORTB &= ~(1 << OLED_CS);
+    for (uint16_t i = 0; i < len; i++) {
+        spi_transfer(buf[i]);
+    }
+    PORTB |= (1 << OLED_CS);
+}
+
+static void oled_init(void)
+{
+    /* Configure control pins */
+    DDRB |= (1 << OLED_DC) | (1 << OLED_RST) | (1 << OLED_CS);
+
+    /* Hardware reset */
+    PORTB &= ~(1 << OLED_RST);
+    _delay_ms(10);
+    PORTB |= (1 << OLED_RST);
+    _delay_ms(10);
+
+    /* Initialization sequence */
+    oled_cmd(0xAE);  /* Display off */
+    oled_cmd(0xD5);  /* Set clock divide */
+    oled_cmd(0x80);
+    oled_cmd(0xA8);  /* Set multiplex ratio */
+    oled_cmd(0x3F);  /* 64 rows */
+    oled_cmd(0xD3);  /* Display offset */
+    oled_cmd(0x00);
+    oled_cmd(0x40);  /* Start line 0 */
+    oled_cmd(0x8D);  /* Charge pump */
+    oled_cmd(0x14);  /* Enable */
+    oled_cmd(0x20);  /* Memory addressing mode */
+    oled_cmd(0x00);  /* Horizontal */
+    oled_cmd(0xA1);  /* Segment remap */
+    oled_cmd(0xC8);  /* COM scan direction */
+    oled_cmd(0xDA);  /* COM pins config */
+    oled_cmd(0x12);
+    oled_cmd(0x81);  /* Contrast */
+    oled_cmd(0xCF);
+    oled_cmd(0xD9);  /* Pre-charge period */
+    oled_cmd(0xF1);
+    oled_cmd(0xDB);  /* VCOMH deselect */
+    oled_cmd(0x40);
+    oled_cmd(0xA4);  /* Display from RAM */
+    oled_cmd(0xA6);  /* Normal (not inverted) */
+    oled_cmd(0xAF);  /* Display on */
+}
+```
+
+## Framebuffer and Font Rendering
+
+<InArticleAd />
+
+
+The framebuffer is a 1024-byte array that mirrors the OLED memory layout: 128 columns by 8 pages. Each byte represents a vertical strip of 8 pixels with bit 0 at the top. To draw a character, you copy its bitmap data into the framebuffer at the correct column and page offset. After updating the buffer, flush the entire thing to the display in one SPI burst.
+
+```c
+static uint8_t framebuf[1024];
+
+/* 5x7 font for digits '0'-'9' and ':' */
+static const uint8_t font_5x7[][5] = {
+    {0x3E,0x51,0x49,0x45,0x3E},  /* 0 */
+    {0x00,0x42,0x7F,0x40,0x00},  /* 1 */
+    {0x42,0x61,0x51,0x49,0x46},  /* 2 */
+    {0x21,0x41,0x45,0x4B,0x31},  /* 3 */
+    {0x18,0x14,0x12,0x7F,0x10},  /* 4 */
+    {0x27,0x45,0x45,0x45,0x39},  /* 5 */
+    {0x3C,0x4A,0x49,0x49,0x30},  /* 6 */
+    {0x01,0x71,0x09,0x05,0x03},  /* 7 */
+    {0x36,0x49,0x49,0x49,0x36},  /* 8 */
+    {0x06,0x49,0x49,0x29,0x1E},  /* 9 */
+    {0x00,0x36,0x36,0x00,0x00},  /* : */
+};
+
+static void fb_clear(void)
+{
+    for (uint16_t i = 0; i < 1024; i++) framebuf[i] = 0;
+}
+
+static void fb_draw_char(uint8_t col, uint8_t page, char c)
+{
+    uint8_t idx;
+    if (c >= '0' && c <= '9') idx = c - '0';
+    else if (c == ':') idx = 10;
+    else return;
+
+    uint16_t offset = page * 128 + col;
+    for (uint8_t i = 0; i < 5; i++) {
+        if (offset + i < 1024) {
+            framebuf[offset + i] = font_5x7[idx][i];
+        }
+    }
+}
+
+static void fb_draw_string(uint8_t col, uint8_t page, const char *s)
+{
+    while (*s) {
+        fb_draw_char(col, page, *s++);
+        col += 6;  /* 5 pixels + 1 space */
+    }
+}
+
+static void oled_flush(void)
+{
+    oled_cmd(0x21); oled_cmd(0); oled_cmd(127);  /* Column range */
+    oled_cmd(0x22); oled_cmd(0); oled_cmd(7);    /* Page range */
+    oled_data(framebuf, 1024);
+}
+```
+
+## Complete Firmware
+
+<InArticleAd />
+
+
+```c
+#define F_CPU 16000000UL
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
+#include <util/atomic.h>
+
+/* Include all the SPI, OLED, and font code from above */
+
+volatile uint32_t seconds = 0;
+
+ISR(TIMER1_COMPA_vect)
+{
+    static uint16_t subsec = 0;
+    subsec++;
+    if (subsec >= 1000) {
+        subsec = 0;
+        seconds++;
+    }
+}
+
+static void timer1_init(void)
+{
+    TCCR1A = 0;
+    TCCR1B = (1 << WGM12) | (1 << CS11) | (1 << CS10);
+    OCR1A  = 249;  /* 1 ms tick */
+    TIMSK1 = (1 << OCIE1A);
+}
+
+static void format_time(uint32_t sec, char *buf)
+{
+    uint8_t h = (sec / 3600) % 24;
+    uint8_t m = (sec / 60) % 60;
+    uint8_t s = sec % 60;
+
+    buf[0] = '0' + h / 10;
+    buf[1] = '0' + h % 10;
+    buf[2] = ':';
+    buf[3] = '0' + m / 10;
+    buf[4] = '0' + m % 10;
+    buf[5] = ':';
+    buf[6] = '0' + s / 10;
+    buf[7] = '0' + s % 10;
+    buf[8] = '\0';
+}
+
+int main(void)
+{
+    spi_init();
+    oled_init();
+    timer1_init();
+    sei();
+
+    uint32_t last_sec = 0xFFFFFFFF;
+
+    while (1) {
+        uint32_t now;
+        ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+            now = seconds;
+        }
+
+        if (now != last_sec) {
+            last_sec = now;
+            char time_str[9];
+            format_time(now, time_str);
+
+            fb_clear();
+            fb_draw_string(30, 3, time_str);  /* Centered on page 3 */
+            oled_flush();
+        }
+    }
+}
+```
+
+## SPI Clock Speed and Prescaler
+
+<InArticleAd />
+
+
+The SPI clock speed is set by the SPI2X bit in SPSR and the SPR1/SPR0 bits in SPCR. The SSD1306 supports SPI clocks up to about 10 MHz, so the default F_CPU/4 (4 MHz) works well. If you need faster transfers, enable SPI2X for F_CPU/2 (8 MHz).
+
+| SPI2X | SPR1 | SPR0 | Clock Divider | Speed (16 MHz) |
+|-------|------|------|---------------|----------------|
+| 0 | 0 | 0 | /4 | 4 MHz |
+| 0 | 0 | 1 | /16 | 1 MHz |
+| 0 | 1 | 0 | /64 | 250 kHz |
+| 0 | 1 | 1 | /128 | 125 kHz |
+| 1 | 0 | 0 | /2 | 8 MHz |
+| 1 | 0 | 1 | /8 | 2 MHz |
+| 1 | 1 | 0 | /32 | 500 kHz |
+| 1 | 1 | 1 | /64 | 250 kHz |
+
+## Exercises
+
+<InArticleAd />
+
+
+1. Scale the font to 2x or 3x size for larger digits on the display. Multiply each bit in the font data to create bigger pixels.
+2. Add a start/stop button: press to pause the clock, press again to resume. Show a "PAUSED" indicator on the display.
+3. Implement a simple graphic: draw a horizontal progress bar that fills across the bottom of the screen each second, then resets.
+4. Measure the time it takes to flush the entire framebuffer to the display. Calculate the theoretical minimum based on the SPI clock speed and 1024 bytes.
+
+## Summary
+
+<InArticleAd />
+
+
+You now understand the SPI protocol at the register level: SPCR configuration, clock polarity and phase, master mode operation, and the transfer-complete flag. You wrote a complete SSD1306 OLED driver that handles initialization, command/data switching via the D/C pin, and framebuffer flushing. The real-time clock demonstrates how to combine SPI display output with timer-based timekeeping. SPI is the fastest on-chip serial bus and the foundation for interfacing with many embedded peripherals.
+
+<EmbeddedProgrammingAtmega328pComments />
+
+
+
+<InArticleAd />
+<TawkWidget />
+<Copyright />

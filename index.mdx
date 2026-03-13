@@ -1,10 +1,10 @@
 ---
 title: "Embedded Programming: ATmega328P"
 description: "Learn bare-metal embedded C programming on the ATmega328P using an Arduino Nano. Nine lessons, nine real builds, from a Morse code beacon to a battery-powered door alert. No Arduino IDE, no libraries, just registers, datasheets, and understanding."
-pubDate: 2026-03-14
+pubDate: 2026-01-15
 tags: ["embedded-systems", "atmega328p", "avr", "bare-metal", "c-programming", "arduino-nano", "microcontroller", "registers", "uart", "spi", "i2c", "adc"]
 excerpt: "Master bare-metal embedded C programming on the ATmega328P. Each lesson builds a real project using only registers and datasheets. Covers GPIO, timers, interrupts, UART, SPI, I2C, ADC, and power management. The foundation every embedded engineer needs."
-heroImage: "https://cdn.siliconwit.com/education/pcb-design-kicad/pcb-design-kicad.png"
+heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-V3-Board-ATmega328P-CH340-5V-USB-C.png"
 ---
 
 import Copyright from '../../../../components/Copyright.astro';
@@ -20,18 +20,26 @@ Learn embedded systems from the ground up by programming the ATmega328P in pure 
     The Arduino IDE hides what matters. Writing to DDRx, PORTx, and PINx directly teaches you how microcontrollers actually work. This knowledge transfers to every chip you will ever use.
   </Card>
 
-  <Card title="Minimal, Affordable Hardware" icon="approve-check">
-    An Arduino Nano costs under $5. A breadboard and a handful of components is all you need. No expensive dev kits, no debugger required to start. You can begin today.
-  </Card>
-
   <Card title="The Datasheet Is Your Teacher" icon="document">
     Every lesson references the ATmega328P datasheet directly. You learn to read register descriptions, timing diagrams, and electrical specs. This is the skill that separates hobbyists from engineers.
   </Card>
 
-  <Card title="Real Projects, Not Blink Tutorials" icon="rocket">
+  <Card title="Smaller, Leaner Firmware" icon="seti:config">
+    The Arduino IDE's Blink sketch compiles to 924 bytes of flash. Our Morse code beacon does more and uses under 428 bytes. Bare metal includes only what you write, with no hidden timer setup, pin lookup tables, or runtime overhead.
+  </Card>
+
+  <Card title="Real Projects, Real Hardware" icon="rocket">
     Each lesson produces something purposeful: a temperature logger, a weather station, a reaction time tester. You build things worth keeping while learning each peripheral.
   </Card>
+
+  <Card title="Minimal, Affordable Hardware" icon="approve-check">
+    An Arduino Nano costs under $5. A breadboard and a handful of components is all you need. No expensive dev kits, no debugger required to start. You can begin today.
+  </Card>
 </CardGrid>
+
+:::note[Why the Nano?]
+This course uses the Arduino Nano in wiring diagrams because it plugs directly into a breadboard, keeping circuits compact and easy to follow. The Uno uses the same ATmega328P chip with the same pin mapping, so every code example works on either board. The Nano also exposes two extra analog-only pins (A6, A7) and costs less. The Uno's main advantage is its shield header layout, which does not apply here since we wire everything by hand at the register level.
+:::
 
 ## Course Structure
 
@@ -154,7 +162,7 @@ Everything you need for the entire course, beyond the Arduino Nano:
 
 2. **Install the AVR toolchain**: avr-gcc, avr-libc, avrdude. Lesson 1 walks through setup on Linux, macOS, and Windows.
 
-3. **Download the ATmega328P datasheet** from [Microchip](https://www.microchip.com/en-us/product/ATmega328P). You will reference it in every lesson.
+3. **Download the ATmega328P datasheet** from [Microchip](https://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-7810-Automotive-Microcontrollers-ATmega328P_Datasheet.pdf) ([product page](https://www.microchip.com/en-us/product/ATmega328P), [archive copy](https://drive.google.com/file/d/1fMLGkKZbYLITJehfF9tpWpZe6VMmuEL0/view?usp=sharing)). You will reference it in every lesson.
 
 4. **Start with Lesson 1.** Each lesson builds on the previous one. Work through them in order.
 

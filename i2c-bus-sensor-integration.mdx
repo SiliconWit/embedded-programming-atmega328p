@@ -1,0 +1,418 @@
+---
+title: "I2C Bus and Sensor Integration"
+description: "Implement the I2C (TWI) protocol on ATmega328P from register level. Build a mini weather station that reads temperature, humidity, and pressure from a BME280 sensor and displays the data on an OLED screen."
+contributors: "sam-macharia,lawrence-langat"
+pubDate: 2026-02-26
+tags: ["i2c", "twi", "bme280", "sensor", "weather-station", "atmega328p", "avr"]
+excerpt: "Implement the I2C (TWI) protocol on ATmega328P from register level. Build a mini weather station that reads temperature, humidity, and pressure from a BME280 sensor and displays the data on an OLED screen."
+heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/medium-ATmega328P-TQFP-32.png"
+---
+
+import TawkWidget from '../../../../components/TawkWidget.astro';
+import UniversalContentContributors from '../../../../components/UniversalContentContributors.astro';
+import InArticleAd from '../../../../components/InArticleAd.astro';
+import Copyright from '../../../../components/Copyright.astro';
+import BionicText from '../../../../components/BionicText.astro';
+import TailwindWrapper from '../../../../components/TailwindWrapper.jsx';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/starlight/components';
+
+<UniversalContentContributors 
+  contributors={frontmatter.contributors}
+/>
+
+
+
+import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
+
+I2C (also called TWI on Atmel chips) lets you connect dozens of sensors and peripherals with just two wires. In this lesson you will implement the ATmega328P TWI interface from scratch, handling start conditions, addressing, ACK/NACK responses, and multi-byte reads. The project is a mini weather station: a BME280 sensor provides temperature, humidity, and barometric pressure readings, and the firmware displays all three values on the SSD1306 OLED from the previous lesson. Two different peripherals sharing two wires, all driven by code you wrote. #I2C #BME280 #WeatherStation
+
+## What We Are Building
+
+<Card title="Mini Weather Station" icon="star">
+A BME280 environmental sensor connected over I2C provides temperature (0.01 C resolution), relative humidity (0.008% resolution), and barometric pressure (0.18 Pa resolution). The firmware reads all three measurements every 2 seconds, applies the BME280 compensation formulas, and renders the results on the SSD1306 OLED display. The OLED is driven over SPI (from Lesson 6), and the BME280 over I2C, showing both buses working together.
+</Card>
+
+**Project specifications:**
+
+| Parameter | Value |
+|-----------|-------|
+| MCU | ATmega328P (on Arduino Nano or Uno) |
+| Sensor | BME280 (I2C address 0x76 or 0x77) |
+| Display | SSD1306 128x64 OLED (SPI) |
+| I2C clock | 100 kHz (standard mode) |
+| I2C pins | SDA (PC4), SCL (PC5) |
+| Update rate | 0.5 Hz (every 2 seconds) |
+| Data shown | Temperature (C), Humidity (%), Pressure (hPa) |
+
+### Parts for This Lesson
+
+| Ref | Component | Quantity | Notes |
+|-----|-----------|----------|-------|
+| 1 | Arduino Nano or Uno (ATmega328P) | 1 | From previous lessons |
+| 2 | Breadboard | 1 | From previous lessons |
+| 3 | BME280 breakout module | 1 | I2C variant with pull-ups on board |
+| 4 | SSD1306 OLED 128x64 (SPI) | 1 | From Lesson 6 |
+| 5 | Jumper wires | ~4 | For I2C connections |
+
+## I2C Protocol Fundamentals
+
+<InArticleAd />
+
+
+I2C is a two-wire synchronous protocol. SDA carries data and SCL carries the clock. Both lines are open-drain with external pull-up resistors (typically 4.7K). The master generates the clock and initiates all communication. A transaction starts with a START condition (SDA falls while SCL is high), followed by a 7-bit address plus a read/write bit, then one or more data bytes, and ends with a STOP condition (SDA rises while SCL is high).
+
+### I2C Transaction Anatomy
+
+| Step | SDA | SCL | Description |
+|------|-----|-----|-------------|
+| START | High to Low | High | Master signals start |
+| Address (7 bits) + R/W | Data | Clock pulses | Master sends slave address |
+| ACK | Slave pulls low | Clock pulse | Slave acknowledges |
+| Data byte | Data | Clock pulses | 8 bits, MSB first |
+| ACK/NACK | Receiver pulls low (or not) | Clock pulse | Acknowledge each byte |
+| STOP | Low to High | High | Master signals stop |
+
+## TWI Registers on ATmega328P
+
+<InArticleAd />
+
+
+The ATmega328P calls its I2C hardware TWI (Two-Wire Interface). Five registers control it. TWBR sets the bit rate (clock speed). TWCR is the control register where you trigger actions by writing specific bit combinations. TWSR holds status codes that tell you what happened after each operation. TWDR is the data register for send/receive. TWAR sets the slave address (only used in slave mode).
+
+| Register | Purpose |
+|----------|---------|
+| TWBR | Bit Rate Register: SCL frequency = F_CPU / (16 + 2 * TWBR * prescaler) |
+| TWCR | Control: TWINT (interrupt flag), TWEA (enable ACK), TWSTA (start), TWSTO (stop), TWEN (enable) |
+| TWSR | Status: 5-bit status code in upper bits, prescaler in lower 2 bits |
+| TWDR | Data Register: write to send, read after receive |
+| TWAR | Slave Address Register (not used in master mode) |
+
+### Setting the I2C Clock Speed
+
+For 100 kHz standard mode with a 16 MHz system clock and prescaler 1:
+
+```
+TWBR = ((F_CPU / SCL_FREQ) - 16) / 2
+TWBR = ((16000000 / 100000) - 16) / 2 = 72
+```
+
+## TWI Driver Implementation
+
+<InArticleAd />
+
+
+```c
+#define F_CPU 16000000UL
+#define TWI_FREQ 100000UL
+
+#include <avr/io.h>
+#include <util/delay.h>
+
+static void twi_init(void)
+{
+    TWSR = 0;  /* Prescaler = 1 */
+    TWBR = ((F_CPU / TWI_FREQ) - 16) / 2;
+    TWCR = (1 << TWEN);  /* Enable TWI */
+}
+
+static uint8_t twi_start(void)
+{
+    TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
+    while (!(TWCR & (1 << TWINT)));
+    return (TWSR & 0xF8);  /* Status code */
+}
+
+static void twi_stop(void)
+{
+    TWCR = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN);
+    while (TWCR & (1 << TWSTO));  /* Wait for stop to complete */
+}
+
+static uint8_t twi_write(uint8_t data)
+{
+    TWDR = data;
+    TWCR = (1 << TWINT) | (1 << TWEN);
+    while (!(TWCR & (1 << TWINT)));
+    return (TWSR & 0xF8);
+}
+
+static uint8_t twi_read_ack(void)
+{
+    TWCR = (1 << TWINT) | (1 << TWEA) | (1 << TWEN);
+    while (!(TWCR & (1 << TWINT)));
+    return TWDR;
+}
+
+static uint8_t twi_read_nack(void)
+{
+    TWCR = (1 << TWINT) | (1 << TWEN);
+    while (!(TWCR & (1 << TWINT)));
+    return TWDR;
+}
+```
+
+### TWI Status Codes
+
+| Code | Meaning |
+|------|---------|
+| 0x08 | START condition transmitted |
+| 0x10 | Repeated START transmitted |
+| 0x18 | SLA+W transmitted, ACK received |
+| 0x20 | SLA+W transmitted, NACK received |
+| 0x28 | Data transmitted, ACK received |
+| 0x40 | SLA+R transmitted, ACK received |
+| 0x50 | Data received, ACK returned |
+| 0x58 | Data received, NACK returned |
+
+## Reading the BME280
+
+<InArticleAd />
+
+
+The BME280 uses a register-based interface. To read a register, you send a write transaction with the register address, then a repeated start followed by a read transaction. The sensor has a block of calibration data in registers 0x88 through 0xA1 and 0xE1 through 0xF0. Raw measurement data lives in registers 0xF7 through 0xFE (8 bytes for pressure, temperature, and humidity). The compensation algorithm uses integer arithmetic defined in the BME280 datasheet.
+
+```c
+#define BME280_ADDR 0x76
+
+static void bme280_write_reg(uint8_t reg, uint8_t val)
+{
+    twi_start();
+    twi_write((BME280_ADDR << 1) | 0);  /* Write mode */
+    twi_write(reg);
+    twi_write(val);
+    twi_stop();
+}
+
+static uint8_t bme280_read_reg(uint8_t reg)
+{
+    twi_start();
+    twi_write((BME280_ADDR << 1) | 0);
+    twi_write(reg);
+    twi_start();  /* Repeated start */
+    twi_write((BME280_ADDR << 1) | 1);  /* Read mode */
+    uint8_t val = twi_read_nack();
+    twi_stop();
+    return val;
+}
+
+static void bme280_read_burst(uint8_t reg, uint8_t *buf, uint8_t len)
+{
+    twi_start();
+    twi_write((BME280_ADDR << 1) | 0);
+    twi_write(reg);
+    twi_start();
+    twi_write((BME280_ADDR << 1) | 1);
+    for (uint8_t i = 0; i < len - 1; i++) {
+        buf[i] = twi_read_ack();
+    }
+    buf[len - 1] = twi_read_nack();
+    twi_stop();
+}
+```
+
+## BME280 Initialization and Calibration
+
+<InArticleAd />
+
+
+```c
+/* Calibration data structure */
+typedef struct {
+    uint16_t dig_T1;
+    int16_t  dig_T2, dig_T3;
+    uint16_t dig_P1;
+    int16_t  dig_P2, dig_P3, dig_P4, dig_P5;
+    int16_t  dig_P6, dig_P7, dig_P8, dig_P9;
+    uint8_t  dig_H1, dig_H3;
+    int16_t  dig_H2, dig_H4, dig_H5;
+    int8_t   dig_H6;
+} bme280_cal_t;
+
+static bme280_cal_t cal;
+
+static void bme280_read_calibration(void)
+{
+    uint8_t buf[26];
+    bme280_read_burst(0x88, buf, 26);
+
+    cal.dig_T1 = (uint16_t)(buf[1] << 8) | buf[0];
+    cal.dig_T2 = (int16_t)(buf[3] << 8) | buf[2];
+    cal.dig_T3 = (int16_t)(buf[5] << 8) | buf[4];
+    cal.dig_P1 = (uint16_t)(buf[7] << 8) | buf[6];
+    cal.dig_P2 = (int16_t)(buf[9] << 8) | buf[8];
+    cal.dig_P3 = (int16_t)(buf[11] << 8) | buf[10];
+    cal.dig_P4 = (int16_t)(buf[13] << 8) | buf[12];
+    cal.dig_P5 = (int16_t)(buf[15] << 8) | buf[14];
+    cal.dig_P6 = (int16_t)(buf[17] << 8) | buf[16];
+    cal.dig_P7 = (int16_t)(buf[19] << 8) | buf[18];
+    cal.dig_P8 = (int16_t)(buf[21] << 8) | buf[20];
+    cal.dig_P9 = (int16_t)(buf[23] << 8) | buf[22];
+
+    cal.dig_H1 = bme280_read_reg(0xA1);
+
+    uint8_t hbuf[7];
+    bme280_read_burst(0xE1, hbuf, 7);
+    cal.dig_H2 = (int16_t)(hbuf[1] << 8) | hbuf[0];
+    cal.dig_H3 = hbuf[2];
+    cal.dig_H4 = (int16_t)(hbuf[3] << 4) | (hbuf[4] & 0x0F);
+    cal.dig_H5 = (int16_t)(hbuf[5] << 4) | (hbuf[4] >> 4);
+    cal.dig_H6 = (int8_t)hbuf[6];
+}
+
+static void bme280_init(void)
+{
+    /* Soft reset */
+    bme280_write_reg(0xE0, 0xB6);
+    _delay_ms(10);
+
+    bme280_read_calibration();
+
+    /* Humidity oversampling x1 (must be set before ctrl_meas) */
+    bme280_write_reg(0xF2, 0x01);
+
+    /* Temperature x1, Pressure x1, Normal mode */
+    bme280_write_reg(0xF4, 0x27);
+
+    /* Standby 1000ms, filter off */
+    bme280_write_reg(0xF5, 0xA0);
+}
+```
+
+## Compensation Formulas
+
+<InArticleAd />
+
+
+The BME280 datasheet provides integer compensation routines that convert raw ADC values into physical units. These use 32-bit arithmetic and a shared variable (t_fine) that links the temperature compensation to pressure and humidity compensation. The formulas are complex but they come directly from Bosch's reference implementation.
+
+```c
+static int32_t t_fine;
+
+static int32_t compensate_temp(int32_t adc_T)
+{
+    int32_t var1 = ((((adc_T >> 3) - ((int32_t)cal.dig_T1 << 1)))
+                   * ((int32_t)cal.dig_T2)) >> 11;
+    int32_t var2 = (((((adc_T >> 4) - ((int32_t)cal.dig_T1))
+                   * ((adc_T >> 4) - ((int32_t)cal.dig_T1))) >> 12)
+                   * ((int32_t)cal.dig_T3)) >> 14;
+    t_fine = var1 + var2;
+    return (t_fine * 5 + 128) >> 8;  /* Result in 0.01 C */
+}
+
+static uint32_t compensate_press(int32_t adc_P)
+{
+    int32_t var1 = (t_fine >> 1) - 64000;
+    int32_t var2 = (((var1 >> 2) * (var1 >> 2)) >> 11) * ((int32_t)cal.dig_P6);
+    var2 = var2 + ((var1 * ((int32_t)cal.dig_P5)) << 1);
+    var2 = (var2 >> 2) + (((int32_t)cal.dig_P4) << 16);
+    var1 = (((cal.dig_P3 * (((var1>>2)*(var1>>2)) >> 13)) >> 3)
+           + ((((int32_t)cal.dig_P2) * var1) >> 1)) >> 18;
+    var1 = ((32768 + var1) * ((int32_t)cal.dig_P1)) >> 15;
+    if (var1 == 0) return 0;
+    uint32_t p = (((uint32_t)(((int32_t)1048576) - adc_P) - (var2 >> 12))) * 3125;
+    if (p < 0x80000000) p = (p << 1) / ((uint32_t)var1);
+    else                p = (p / (uint32_t)var1) * 2;
+    var1 = (((int32_t)cal.dig_P9) * ((int32_t)(((p>>3)*(p>>3))>>13))) >> 12;
+    var2 = (((int32_t)(p >> 2)) * ((int32_t)cal.dig_P8)) >> 13;
+    return (uint32_t)((int32_t)p + ((var1 + var2 + cal.dig_P7) >> 4));
+    /* Result in Pa with Q24.8 format (divide by 256 for Pa) */
+}
+
+static uint32_t compensate_humid(int32_t adc_H)
+{
+    int32_t v = t_fine - 76800;
+    v = (((((adc_H << 14) - (((int32_t)cal.dig_H4) << 20)
+        - (((int32_t)cal.dig_H5) * v)) + 16384) >> 15)
+        * (((((((v * ((int32_t)cal.dig_H6)) >> 10)
+        * (((v * ((int32_t)cal.dig_H3)) >> 11) + 32768)) >> 10)
+        + 2097152) * ((int32_t)cal.dig_H2) + 8192) >> 14));
+    v = v - (((((v >> 15) * (v >> 15)) >> 7) * ((int32_t)cal.dig_H1)) >> 4);
+    v = (v < 0) ? 0 : v;
+    v = (v > 419430400) ? 419430400 : v;
+    return (uint32_t)(v >> 12);  /* Result in Q22.10 format (divide by 1024 for %) */
+}
+```
+
+## Putting It All Together
+
+<InArticleAd />
+
+
+The main loop reads all eight data bytes from the BME280 in a single burst, applies the compensation formulas, formats the results as strings, and renders them on the OLED. The OLED driver from Lesson 6 handles the display update. Temperature is shown in degrees Celsius, humidity as a percentage, and pressure in hectopascals (which equals millibars).
+
+```c
+int main(void)
+{
+    twi_init();
+    spi_init();
+    oled_init();
+    bme280_init();
+
+    while (1) {
+        /* Read raw data burst (0xF7 to 0xFE, 8 bytes) */
+        uint8_t data[8];
+        bme280_read_burst(0xF7, data, 8);
+
+        int32_t adc_P = ((int32_t)data[0] << 12) | ((int32_t)data[1] << 4) | (data[2] >> 4);
+        int32_t adc_T = ((int32_t)data[3] << 12) | ((int32_t)data[4] << 4) | (data[5] >> 4);
+        int32_t adc_H = ((int32_t)data[6] << 8) | data[7];
+
+        /* Compensate (temperature must be first, sets t_fine) */
+        int32_t temp_100  = compensate_temp(adc_T);   /* 0.01 C */
+        uint32_t press_256 = compensate_press(adc_P); /* Pa * 256 */
+        uint32_t humid_1024 = compensate_humid(adc_H); /* % * 1024 */
+
+        /* Format and display */
+        fb_clear();
+
+        /* Temperature: e.g., "T: 23.45 C" */
+        /* Humidity:    e.g., "H: 55.2 %" */
+        /* Pressure:    e.g., "P: 1013 hPa" */
+        /* (Use fb_draw_string with formatted buffers) */
+
+        oled_flush();
+        _delay_ms(2000);
+    }
+}
+```
+
+## I2C Bus Debugging Tips
+
+<InArticleAd />
+
+
+I2C problems are common and can be frustrating. Here are the most frequent issues and how to solve them.
+
+| Problem | Likely Cause | Fix |
+|---------|-------------|-----|
+| No ACK from sensor | Wrong address, wiring error | Check SDA/SCL connections, try both 0x76 and 0x77 |
+| Bus stuck (SDA held low) | Sensor confused by interrupted transaction | Toggle SCL manually 9 times, then send STOP |
+| Corrupted data | Missing pull-ups | Add 4.7K pull-ups on SDA and SCL to VCC |
+| Intermittent failures | Long wires, noise | Keep wires under 30 cm, add decoupling capacitor near sensor |
+| All readings zero | Wrong register address or oversampling off | Verify ctrl_meas and ctrl_hum register values |
+
+## Exercises
+
+<InArticleAd />
+
+
+1. Add error checking to the TWI driver: verify the status code after each operation and return an error code if something unexpected happens. Implement a retry mechanism.
+2. Display the pressure as altitude using the barometric formula: altitude = 44330 * (1 - (P/P0)^0.1903) where P0 is sea-level pressure (101325 Pa).
+3. Log all three readings over UART (from Lesson 5) in CSV format alongside the OLED display, so you can capture data on a PC.
+4. Add a second I2C device (for example a BH1750 light sensor at address 0x23) and display its readings on the fourth line of the OLED.
+
+## Summary
+
+<InArticleAd />
+
+
+You now understand the I2C protocol at the register level: start/stop conditions, addressing, ACK/NACK handshaking, and burst reads. You implemented a complete TWI driver for the ATmega328P and used it to interface with the BME280, one of the most capable environmental sensors available. The weather station combines I2C input (BME280) with SPI output (OLED), demonstrating how multiple bus protocols coexist in a single project. I2C's simplicity (two wires, addressable devices) makes it the default choice for most sensor interfacing.
+
+<EmbeddedProgrammingAtmega328pComments />
+
+
+
+<InArticleAd />
+<TawkWidget />
+<Copyright />

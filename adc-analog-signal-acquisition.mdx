@@ -1,0 +1,359 @@
+---
+title: "ADC and Analog Signal Acquisition"
+description: "Master the ATmega328P 10-bit ADC with register-level configuration. Build a light-tracking indicator using photoresistors that displays a real-time bar graph on an OLED, covering reference voltages, free-running mode, and noise reduction."
+contributors: "sam-macharia,lawrence-langat"
+pubDate: 2026-03-05
+tags: ["adc", "analog", "signal-acquisition", "photoresistor", "atmega328p", "avr"]
+excerpt: "Master the ATmega328P 10-bit ADC with register-level configuration. Build a light-tracking indicator using photoresistors that displays a real-time bar graph on an OLED, covering reference voltages, free-running mode, and noise reduction."
+heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/medium-ATmega328P-TQFP-32.png"
+---
+
+import TawkWidget from '../../../../components/TawkWidget.astro';
+import UniversalContentContributors from '../../../../components/UniversalContentContributors.astro';
+import InArticleAd from '../../../../components/InArticleAd.astro';
+import Copyright from '../../../../components/Copyright.astro';
+import BionicText from '../../../../components/BionicText.astro';
+import TailwindWrapper from '../../../../components/TailwindWrapper.jsx';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/starlight/components';
+
+<UniversalContentContributors 
+  contributors={frontmatter.contributors}
+/>
+
+
+
+import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
+
+The real world is analog: light intensity, temperature, force, and sound are all continuous signals. The ADC (Analog-to-Digital Converter) on the ATmega328P samples these signals and converts them into 10-bit digital values your firmware can process. In this lesson you will configure the ADC registers directly, explore reference voltage options, compare single-conversion and free-running modes, and implement oversampling for noise reduction. The project uses two photoresistors (LDRs) to detect which direction is brighter, displaying a live bar graph on the OLED that shows the relative light level from each sensor. #ADC #AnalogSignals #Photoresistor
+
+## What We Are Building
+
+<Card title="Light-Tracking Indicator" icon="star">
+Two LDRs (light-dependent resistors) are mounted side by side in voltage divider circuits, each feeding a separate ADC channel. The firmware samples both channels, computes a 16-sample running average for noise reduction, and renders two horizontal bar graphs on the OLED display. A directional arrow in the center indicates which side is brighter. The system updates at approximately 20 Hz, giving a smooth, responsive display.
+</Card>
+
+**Project specifications:**
+
+| Parameter | Value |
+|-----------|-------|
+| MCU | ATmega328P (on Arduino Nano or Uno) |
+| ADC channels | ADC0 (PC0) and ADC1 (PC1) |
+| Resolution | 10-bit (0 to 1023) |
+| Reference | AVcc (5V) |
+| ADC clock | 125 kHz (prescaler 128) |
+| Oversampling | 16 samples averaged per reading |
+| Display | SSD1306 128x64 OLED (SPI) |
+| Update rate | ~20 Hz |
+
+### Parts for This Lesson
+
+| Ref | Component | Quantity | Notes |
+|-----|-----------|----------|-------|
+| 1 | Arduino Nano or Uno (ATmega328P) | 1 | From previous lessons |
+| 2 | Breadboard | 1 | From previous lessons |
+| 3 | LDR (photoresistor) | 2 | 5mm, typical 10K in daylight |
+| 4 | 10K ohm resistor | 2 | Voltage divider partners |
+| 5 | SSD1306 OLED 128x64 (SPI) | 1 | From Lesson 6 |
+| 6 | Jumper wires | ~6 | Male-to-male |
+
+## ADC Register Overview
+
+<InArticleAd />
+
+
+The ATmega328P ADC is a successive-approximation converter with 10-bit resolution. It has 8 multiplexed input channels (ADC0 through ADC7, though ADC6 and ADC7 are only available on surface-mount packages). Three registers control the ADC: ADMUX selects the reference voltage and input channel, ADCSRA controls the enable, start, prescaler, and interrupt, and ADCSRB selects the trigger source for auto-trigger mode.
+
+| Register | Purpose |
+|----------|---------|
+| ADMUX | Reference selection (REFS1:0), left-adjust (ADLAR), channel selection (MUX3:0) |
+| ADCSRA | Enable (ADEN), start (ADSC), auto-trigger (ADATE), interrupt (ADIE), prescaler (ADPS2:0) |
+| ADCSRB | Auto-trigger source (ADTS2:0) |
+| ADCL/ADCH | 10-bit result (read ADCL first, or use ADC macro) |
+
+### Reference Voltage Options
+
+| REFS1 | REFS0 | Reference | Typical Use |
+|-------|-------|-----------|-------------|
+| 0 | 0 | AREF pin (external) | Precision reference IC |
+| 0 | 1 | AVcc with cap on AREF | General purpose (5V) |
+| 1 | 1 | Internal 1.1V | Small signals, battery monitoring |
+
+:::caution
+Never apply a voltage higher than the selected reference to an ADC pin. With AVcc reference (5V), input must be 0 to 5V. With the internal 1.1V reference, input must be 0 to 1.1V. Exceeding the reference voltage gives a reading of 1023 and can damage the pin.
+:::
+
+### ADC Clock and Prescaler
+
+The ADC needs a clock between 50 kHz and 200 kHz for full 10-bit resolution. With a 16 MHz system clock, prescaler 128 gives 125 kHz, which is in the optimal range. A single conversion takes 13 ADC clock cycles (25 for the first conversion after enabling), so each reading takes about 104 microseconds.
+
+| ADPS2:0 | Prescaler | ADC Clock (16 MHz) | Conversion Time |
+|---------|-----------|--------------------|-----------------|
+| 000 | 2 | 8 MHz | Too fast |
+| 011 | 8 | 2 MHz | Too fast |
+| 101 | 32 | 500 kHz | Reduced accuracy |
+| 110 | 64 | 250 kHz | Acceptable |
+| 111 | 128 | 125 kHz | Best accuracy |
+
+## ADC Driver Implementation
+
+<InArticleAd />
+
+
+```c
+#define F_CPU 16000000UL
+#include <avr/io.h>
+
+static void adc_init(void)
+{
+    /* AVcc reference, right-adjusted result */
+    ADMUX = (1 << REFS0);
+
+    /* Enable ADC, prescaler 128 (125 kHz ADC clock) */
+    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
+
+    /* First conversion (25 clock cycles, discard result) */
+    ADCSRA |= (1 << ADSC);
+    while (ADCSRA & (1 << ADSC));
+}
+
+static uint16_t adc_read(uint8_t channel)
+{
+    /* Select channel (clear old, set new) */
+    ADMUX = (ADMUX & 0xF0) | (channel & 0x0F);
+
+    /* Start conversion */
+    ADCSRA |= (1 << ADSC);
+    while (ADCSRA & (1 << ADSC));
+
+    return ADC;  /* Read 10-bit result */
+}
+```
+
+## Free-Running Mode
+
+<InArticleAd />
+
+
+In free-running mode, the ADC starts a new conversion automatically as soon as the previous one finishes. This is useful when you need continuous sampling at the maximum rate. You enable it by setting ADATE (auto-trigger enable) in ADCSRA and selecting free-running as the trigger source in ADCSRB (ADTS2:0 = 000).
+
+```c
+static void adc_init_freerun(uint8_t channel)
+{
+    ADMUX  = (1 << REFS0) | (channel & 0x0F);
+    ADCSRA = (1 << ADEN) | (1 << ADSC) | (1 << ADATE)
+           | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
+    ADCSRB = 0;  /* Free-running trigger source */
+}
+
+/* Read the latest result (non-blocking) */
+static uint16_t adc_read_freerun(void)
+{
+    return ADC;
+}
+```
+
+## Oversampling for Noise Reduction
+
+<InArticleAd />
+
+
+ADC readings are noisy, especially on a breadboard with long wires and a switching USB power supply. Averaging multiple samples reduces random noise by the square root of the number of samples. Sixteen samples averaged together reduce noise by a factor of 4 (roughly 2 extra bits of effective resolution). The trade-off is slower update rate, but at 125 kHz ADC clock, 16 conversions still complete in under 2 milliseconds.
+
+```c
+#define OVERSAMPLE_COUNT 16
+
+static uint16_t adc_read_averaged(uint8_t channel)
+{
+    uint32_t sum = 0;
+    for (uint8_t i = 0; i < OVERSAMPLE_COUNT; i++) {
+        sum += adc_read(channel);
+    }
+    return (uint16_t)(sum / OVERSAMPLE_COUNT);
+}
+```
+
+## LDR Voltage Divider Circuit
+
+<InArticleAd />
+
+
+Each LDR forms a voltage divider with a fixed 10K resistor. The LDR connects from the ADC pin to VCC, and the 10K resistor connects from the ADC pin to ground. In bright light, the LDR resistance drops (to around 1K or less), and the voltage at the ADC pin rises toward VCC. In darkness, the LDR resistance increases (to hundreds of kilohms), and the voltage drops toward ground.
+
+| Signal | Arduino Pin | ATmega328P Pin | Connection |
+|--------|------------|----------------|------------|
+| LDR Left | A0 | PC0 (ADC0) | LDR to VCC, 10K to GND |
+| LDR Right | A1 | PC1 (ADC1) | LDR to VCC, 10K to GND |
+
+### ADC Value to Voltage Conversion
+
+```
+V = (ADC_value / 1023.0) * V_ref
+```
+
+For AVcc reference (5V): an ADC reading of 512 corresponds to approximately 2.5V.
+
+## Complete Firmware
+
+<InArticleAd />
+
+
+```c
+#define F_CPU 16000000UL
+
+#include <avr/io.h>
+#include <util/delay.h>
+#include <string.h>
+
+/* Include SPI and OLED driver from Lesson 6 */
+
+#define OVERSAMPLE 16
+#define BAR_MAX_WIDTH 50  /* pixels per bar */
+
+static void adc_init(void)
+{
+    ADMUX = (1 << REFS0);
+    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
+    ADCSRA |= (1 << ADSC);
+    while (ADCSRA & (1 << ADSC));
+}
+
+static uint16_t adc_read(uint8_t channel)
+{
+    ADMUX = (ADMUX & 0xF0) | (channel & 0x0F);
+    ADCSRA |= (1 << ADSC);
+    while (ADCSRA & (1 << ADSC));
+    return ADC;
+}
+
+static uint16_t adc_read_avg(uint8_t ch)
+{
+    uint32_t sum = 0;
+    for (uint8_t i = 0; i < OVERSAMPLE; i++) sum += adc_read(ch);
+    return (uint16_t)(sum / OVERSAMPLE);
+}
+
+/* Draw a horizontal bar at (col, page) with given width */
+static void fb_draw_bar(uint8_t col, uint8_t page, uint8_t width)
+{
+    uint16_t offset = page * 128 + col;
+    for (uint8_t i = 0; i < width && (offset + i) < 1024; i++) {
+        framebuf[offset + i] = 0x7E;  /* Solid bar pattern */
+    }
+}
+
+/* Draw a simple arrow character */
+static void fb_draw_arrow(uint8_t col, uint8_t page, char dir)
+{
+    uint16_t offset = page * 128 + col;
+    if (dir == '<') {
+        uint8_t arrow[] = {0x08, 0x1C, 0x3E, 0x7F, 0x3E, 0x1C, 0x08};
+        for (uint8_t i = 0; i < 7 && (offset+i) < 1024; i++)
+            framebuf[offset + i] = arrow[i];
+    } else if (dir == '>') {
+        uint8_t arrow[] = {0x08, 0x1C, 0x3E, 0x7F, 0x3E, 0x1C, 0x08};
+        for (uint8_t i = 0; i < 7 && (offset+i) < 1024; i++)
+            framebuf[offset + i] = arrow[6 - i];
+    } else {
+        uint8_t eq[] = {0x00, 0x24, 0x24, 0x24, 0x24, 0x24, 0x00};
+        for (uint8_t i = 0; i < 7 && (offset+i) < 1024; i++)
+            framebuf[offset + i] = eq[i];
+    }
+}
+
+int main(void)
+{
+    spi_init();
+    oled_init();
+    adc_init();
+
+    while (1) {
+        uint16_t left  = adc_read_avg(0);
+        uint16_t right = adc_read_avg(1);
+
+        /* Scale to bar width */
+        uint8_t bar_l = (uint8_t)((uint32_t)left  * BAR_MAX_WIDTH / 1023);
+        uint8_t bar_r = (uint8_t)((uint32_t)right * BAR_MAX_WIDTH / 1023);
+
+        fb_clear();
+
+        /* Labels */
+        fb_draw_string(0, 0, "LEFT");
+        fb_draw_string(90, 0, "RIGHT");
+
+        /* Bars */
+        fb_draw_bar(0, 2, bar_l);
+        fb_draw_bar(128 - bar_r, 4, bar_r);
+
+        /* Direction arrow */
+        char dir = '=';
+        int16_t diff = (int16_t)left - (int16_t)right;
+        if (diff > 50) dir = '<';       /* Left is brighter */
+        else if (diff < -50) dir = '>';  /* Right is brighter */
+        fb_draw_arrow(60, 6, dir);
+
+        /* Numeric values */
+        char buf[5];
+        utoa(left, buf, 10);
+        fb_draw_string(30, 0, buf);
+        utoa(right, buf, 10);
+        fb_draw_string(70, 0, buf);
+
+        oled_flush();
+        _delay_ms(50);  /* ~20 Hz update */
+    }
+}
+```
+
+## ADC Noise Reduction Sleep Mode
+
+<InArticleAd />
+
+
+The ATmega328P has a dedicated ADC Noise Reduction sleep mode. When entered, the CPU halts and most digital circuitry stops switching, which significantly reduces noise coupled into the ADC. The ADC continues to operate and triggers an interrupt when the conversion completes, waking the CPU. This is useful when you need the best possible accuracy from the 10-bit converter.
+
+```c
+#include <avr/sleep.h>
+#include <avr/interrupt.h>
+
+ISR(ADC_vect)
+{
+    /* Conversion complete, CPU wakes up */
+}
+
+static uint16_t adc_read_quiet(uint8_t channel)
+{
+    ADMUX = (ADMUX & 0xF0) | (channel & 0x0F);
+    ADCSRA |= (1 << ADIE);  /* Enable ADC interrupt */
+    set_sleep_mode(SLEEP_MODE_ADC);
+    sei();
+    sleep_mode();            /* Enter sleep, ADC starts automatically */
+    ADCSRA &= ~(1 << ADIE); /* Disable ADC interrupt */
+    return ADC;
+}
+```
+
+## Exercises
+
+<InArticleAd />
+
+
+1. Add a third LDR and display three bar graphs. Use channels ADC0, ADC1, and ADC2.
+2. Implement oversampling with decimation to get 12-bit effective resolution. Take 256 samples, sum them (result fits in uint32_t), then right-shift by 4 to get a 12-bit value (0 to 4095).
+3. Stream the raw ADC values over UART (from Lesson 5) at 100 Hz and plot them in real time using a serial plotter or Python script. Observe the noise with and without averaging.
+4. Implement a simple peak detector: track and display the maximum ADC reading seen since the last reset (button press clears the peak).
+
+## Summary
+
+<InArticleAd />
+
+
+You now understand the ATmega328P ADC at the register level: reference voltage selection, channel multiplexing, prescaler configuration, single-conversion and free-running modes, and the noise reduction sleep mode. Oversampling with averaging is a practical technique that improves effective resolution with minimal code. The light-tracking indicator demonstrates real-time analog signal acquisition with visual feedback, a pattern that applies to any analog sensor interfacing.
+
+<EmbeddedProgrammingAtmega328pComments />
+
+
+
+<InArticleAd />
+<TawkWidget />
+<Copyright />
