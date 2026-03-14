@@ -12,6 +12,8 @@ sidebar:
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Contributors Welcome](https://img.shields.io/badge/contributors-welcome-orange)
 
+**Read this course at:** [https://siliconwit.com/education/embedded-programming-atmega328p/](https://siliconwit.com/education/embedded-programming-atmega328p/)
+
 A bare-metal C programming course for the AVR ATmega328P microcontroller. Lessons progress from toolchain setup and GPIO registers through communication protocols (UART, SPI, I2C), analog acquisition, and power management.
 
 ## Lessons
