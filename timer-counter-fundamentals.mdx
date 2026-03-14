@@ -138,7 +138,9 @@ In CTC mode, the timer counts from 0 to the value in OCRnA, then resets. If you 
    |    |____|    |____|    |___
          ^         ^
       one period = 2*(1+OCRnA) ticks
-``` The frequency of that square wave is:
+```
+
+The frequency of that square wave is:
 
 ```
 f_out = F_CPU / (2 * prescaler * (1 + OCR1A))
@@ -284,7 +286,9 @@ While this lesson focuses on CTC mode for frequency generation, PWM mode is equa
    |   |_|   |_|   |_______
     <-->
     duty = OCRnA / MAX
-``` The duty cycle controls the average voltage. You will use PWM extensively in later lessons for analog-like outputs.
+```
+
+The duty cycle controls the average voltage. You will use PWM extensively in later lessons for analog-like outputs.
 
 ```c
 /* Example: Fast PWM on Timer0, ~62.5 kHz, 50% duty */

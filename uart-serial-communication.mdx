@@ -181,7 +181,9 @@ A ring buffer (circular buffer) decouples the producer (main code adding charact
 
   Wraps around when head or tail
   reaches the end of the array.
-``` The main code writes to the buffer and enables the UDRE interrupt. The ISR sends one byte at a time and disables itself when the buffer is empty. This prevents the main loop from stalling while long strings are transmitted.
+```
+
+The main code writes to the buffer and enables the UDRE interrupt. The ISR sends one byte at a time and disables itself when the buffer is empty. This prevents the main loop from stalling while long strings are transmitted.
 
 ```c
 #define TX_BUF_SIZE 64

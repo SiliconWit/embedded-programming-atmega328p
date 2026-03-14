@@ -80,7 +80,9 @@ SPI uses four signals: MOSI (Master Out Slave In), MISO (Master In Slave Out), S
 
   Data shifts out MOSI on each SCK edge.
   SS must be LOW to select the slave.
-``` The master generates the clock and drives MOSI while reading MISO. Data is exchanged simultaneously in both directions, one bit per clock edge. The slave is selected by pulling its SS line low.
+```
+
+The master generates the clock and drives MOSI while reading MISO. Data is exchanged simultaneously in both directions, one bit per clock edge. The slave is selected by pulling its SS line low.
 
 | Signal | ATmega328P Pin | Arduino Pin | Direction |
 |--------|---------------|-------------|-----------|

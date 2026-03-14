@@ -82,7 +82,9 @@ I2C is a two-wire synchronous protocol. SDA carries data and SCL carries the clo
   Both lines are open-drain:
   devices can only pull LOW.
   Pull-ups restore HIGH when released.
-``` The master generates the clock and initiates all communication. A transaction starts with a START condition (SDA falls while SCL is high), followed by a 7-bit address plus a read/write bit, then one or more data bytes, and ends with a STOP condition (SDA rises while SCL is high).
+```
+
+The master generates the clock and initiates all communication. A transaction starts with a START condition (SDA falls while SCL is high), followed by a 7-bit address plus a read/write bit, then one or more data bytes, and ends with a STOP condition (SDA rises while SCL is high).
 
 ### I2C Transaction Anatomy
 

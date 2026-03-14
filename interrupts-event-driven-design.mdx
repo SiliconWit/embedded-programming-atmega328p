@@ -90,7 +90,9 @@ When an interrupt fires, the CPU finishes the current instruction, pushes the pr
         |
         v
   Resume main code where it left off
-``` The interrupt service routine (ISR) executes, then the CPU restores the program counter and re-enables interrupts via the RETI instruction. The entire process takes a minimum of 4 clock cycles for the vector jump alone.
+```
+
+The interrupt service routine (ISR) executes, then the CPU restores the program counter and re-enables interrupts via the RETI instruction. The entire process takes a minimum of 4 clock cycles for the vector jump alone.
 
 ### Interrupt Types on ATmega328P
 
@@ -388,7 +390,9 @@ When a variable wider than 8 bits is shared between an ISR and main code, the ma
   Result: main reads 0x01FF (corrupt!)
   Actual values were 0x00FF then 0x0100
   ATOMIC_BLOCK prevents this.
-``` This gives a corrupted value. The ATOMIC_BLOCK macro from util/atomic.h temporarily disables interrupts during the read, guaranteeing a consistent value.
+```
+
+This gives a corrupted value. The ATOMIC_BLOCK macro from util/atomic.h temporarily disables interrupts during the read, guaranteeing a consistent value.
 
 ```c
 #include <util/atomic.h>

@@ -99,7 +99,9 @@ The ATmega328P has six sleep modes, each disabling progressively more hardware t
   +-------+--------+  ~0.2 uA  + Timer2 async
   | Ext. Standby   |
   +----------------+
-``` The deeper the sleep, the fewer wake sources are available and the longer it takes to resume execution. Power-down mode disables everything except the external interrupt logic and the watchdog timer, achieving the lowest possible current draw.
+```
+
+The deeper the sleep, the fewer wake sources are available and the longer it takes to resume execution. Power-down mode disables everything except the external interrupt logic and the watchdog timer, achieving the lowest possible current draw.
 
 | Sleep Mode | Current (typical) | What Stays Running | Wake Sources |
 |-----------|-------------------|-------------------|--------------|
