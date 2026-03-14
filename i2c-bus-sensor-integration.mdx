@@ -60,7 +60,29 @@ A BME280 environmental sensor connected over I2C provides temperature (0.01 C re
 <InArticleAd />
 
 
-I2C is a two-wire synchronous protocol. SDA carries data and SCL carries the clock. Both lines are open-drain with external pull-up resistors (typically 4.7K). The master generates the clock and initiates all communication. A transaction starts with a START condition (SDA falls while SCL is high), followed by a 7-bit address plus a read/write bit, then one or more data bytes, and ends with a STOP condition (SDA rises while SCL is high).
+I2C is a two-wire synchronous protocol. SDA carries data and SCL carries the clock. Both lines are open-drain with external pull-up resistors (typically 4.7K).
+
+```text
+  I2C Bus with two devices:
+
+       VCC           VCC
+        |             |
+      [4.7K]        [4.7K]
+        |             |
+  SDA --+------+------+------+--
+        |      |             |
+  SCL --+--+---+--+----------+--
+           |      |          |
+      +----+--+  ++---------++
+      |ATmega |  | BME280   ||  SSD1306
+      |328P   |  | addr:    ||  addr:
+      |(master)|  | 0x76     ||  0x3C
+      +--------+  +----------++----------+
+
+  Both lines are open-drain:
+  devices can only pull LOW.
+  Pull-ups restore HIGH when released.
+``` The master generates the clock and initiates all communication. A transaction starts with a START condition (SDA falls while SCL is high), followed by a 7-bit address plus a read/write bit, then one or more data bytes, and ends with a STOP condition (SDA rises while SCL is high).
 
 ### I2C Transaction Anatomy
 
@@ -77,6 +99,27 @@ I2C is a two-wire synchronous protocol. SDA carries data and SCL carries the clo
 
 <InArticleAd />
 
+
+An I2C write transaction to the BME280 follows this sequence of bus states. Each step produces a status code in TWSR that your driver must check.
+
+```text
+  I2C write transaction (e.g., set register):
+
+  Master:  [S] [0x76<<1|W] [reg addr] [value] [P]
+             |      |           |         |      |
+  Bus:    START  address+W    data      data   STOP
+             |      |           |         |      |
+  Slave:          [ACK]      [ACK]     [ACK]
+             |      |           |         |
+  TWSR:    0x08   0x18        0x28      0x28
+
+  I2C read transaction (e.g., read register):
+
+  Master:  [S] [0x76<<1|W] [reg] [Sr] [0x76<<1|R] [NACK] [P]
+                                  ^
+                             repeated start
+  Slave:        [ACK]      [ACK]      [ACK] [data]
+```
 
 The ATmega328P calls its I2C hardware TWI (Two-Wire Interface). Five registers control it. TWBR sets the bit rate (clock speed). TWCR is the control register where you trigger actions by writing specific bit combinations. TWSR holds status codes that tell you what happened after each operation. TWDR is the data register for send/receive. TWAR sets the slave address (only used in slave mode).
 
@@ -381,6 +424,23 @@ int main(void)
 
 <InArticleAd />
 
+
+The I2C START and STOP conditions are defined by SDA transitions while SCL is high. During normal data transfer, SDA only changes while SCL is low.
+
+```text
+  I2C START and STOP conditions:
+
+  SDA: ----+         +----
+           |         |
+           +---------+
+  SCL: ------+     +------
+             |     |
+             +-----+
+        START           STOP
+      (SDA falls     (SDA rises
+      while SCL      while SCL
+      is HIGH)       is HIGH)
+```
 
 I2C problems are common and can be frustrating. Here are the most frequent issues and how to solve them.
 

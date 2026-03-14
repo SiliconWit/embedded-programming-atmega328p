@@ -70,6 +70,29 @@ The ATmega328P groups its 23 I/O pins into three ports: Port B (PB0 through PB7)
 | PORTx | R/W | Output: drive high/low. Input: enable pull-up |
 | PINx | R | Read pin logic level |
 
+For a single pin, the DDRx and PORTx bits combine to select one of four configurations:
+
+```text
+  DDRx  PORTx   Pin Configuration
+  ----  -----   ----------------------------
+   0      0     Input, floating (Hi-Z)
+   0      1     Input, internal pull-up
+   1      0     Output, drive LOW
+   1      1     Output, drive HIGH
+
+  Output push-pull:          Input with pull-up:
+
+     VCC                        VCC
+      |                          |
+      +--- (DDRx=1)             [R] internal
+      |                          |  ~20K-50K
+   +--+--+                   +--+--+
+   | Pin  |---> to load      | Pin  |<--- from switch
+   +--+--+                   +--+--+
+      |                          |
+     GND                     (switch to GND)
+```
+
 ### Bit Manipulation Patterns
 
 ```c
@@ -96,7 +119,27 @@ DDRD |= (1 << PD2) | (1 << PD3) | (1 << PD4) | (1 << PD5);
 <InArticleAd />
 
 
-Wire the four LEDs with their anodes to PD2 through PD5 (through 220 ohm resistors to ground). Connect the push button between PD6 and ground, with a 10K pull-up resistor to VCC. Alternatively, you can skip the external pull-up and enable the internal pull-up in software by setting the PORTx bit while the pin is configured as input.
+Wire the four LEDs with their anodes to PD2 through PD5 (through 220 ohm resistors to ground). Connect the push button between PD6 and ground, with a 10K pull-up resistor to VCC.
+
+```text
+          ATmega328P
+         +-----------+
+         |           |
+   VCC---+---[10K]---+--PD6 (Button)
+         |           |     |
+         |   PD2 ----+--[220R]--[LED1]--GND
+         |   PD3 ----+--[220R]--[LED2]--GND
+         |   PD4 ----+--[220R]--[LED3]--GND
+         |   PD5 ----+--[220R]--[LED4]--GND
+         |           |
+         +-----------+
+                     |
+                    GND
+         Button: normally open to GND
+         Press pulls PD6 low
+```
+
+Alternatively, you can skip the external pull-up and enable the internal pull-up in software by setting the PORTx bit while the pin is configured as input.
 
 | Signal | Arduino Nano Pin | ATmega328P Pin | Connection |
 |--------|-----------------|----------------|------------|
@@ -265,6 +308,23 @@ This adds a tiny bit of overhead per iteration but works with any value. You wil
 
 <InArticleAd />
 
+
+The following diagram compares a floating input (unpredictable readings) with a pulled-up input (stable HIGH until grounded by a switch):
+
+```text
+  Floating input:          Pull-up input:
+
+     ???                       VCC
+      |                         |
+      | (noise couples in)     [R] 10K (ext) or
+      |                         |  20-50K (int)
+   +--+--+                  +--+--+
+   | PINx | reads random    | PINx | reads HIGH
+   +--+--+                  +--+--+
+      |                         |
+     (nothing)              [Switch]--GND
+                            (press = LOW)
+```
 
 When a pin is configured as input, it is high-impedance and will float to unpredictable values if left unconnected. A pull-up resistor ties the pin to VCC so it reads high by default. Pressing the button connects the pin to ground, pulling it low. The ATmega328P has built-in pull-up resistors (20K to 50K typical) that you enable by writing a 1 to the PORTx bit while DDRx is 0. External 10K pull-ups give a stronger, more predictable pull-up current.
 

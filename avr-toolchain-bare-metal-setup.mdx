@@ -142,6 +142,64 @@ Create a project directory with the following layout:
   - Makefile
 </FileTree>
 
+## The Build and Flash Pipeline
+
+<InArticleAd />
+
+
+The entire process from source code to running firmware follows a fixed pipeline. Each tool in the chain transforms the code into a form closer to what the hardware needs.
+
+```text
+ +----------+    +----------+    +----------+
+ | main.c   |--->| avr-gcc  |--->| morse.elf|
+ | (source) |    | compile  |    | (linked) |
+ +----------+    | + link   |    +-----+----+
+                 +----------+          |
+                                       v
+                               +-------------+
+                               | avr-objcopy |
+                               | ELF -> HEX  |
+                               +------+------+
+                                      |
+                                      v
+                               +-------------+
+                               |   avrdude   |
+                               | flash over  |
+                               | USB serial  |
+                               +------+------+
+                                      |
+                                      v
+                               +-------------+
+                               | ATmega328P  |
+                               | (running)   |
+                               +-------------+
+```
+
+## ATmega328P Memory Map
+
+<InArticleAd />
+
+
+The ATmega328P has three separate memory spaces. Flash holds your program, SRAM holds variables at runtime, and EEPROM provides non-volatile storage for configuration data. Understanding these regions helps you interpret the `avr-size` output after compiling.
+
+```text
+  Flash (32 KB)        SRAM (2 KB)       EEPROM (1 KB)
+ +--------------+    +--------------+   +--------------+
+ | 0x0000       |    | 0x0100       |   | 0x000        |
+ | Vector Table |    | .data        |   |              |
+ +--------------+    | (initialized)|   | User data    |
+ | .text        |    +--------------+   | (persistent) |
+ | (your code)  |    | .bss         |   |              |
+ |              |    | (zeroed)     |   |              |
+ +--------------+    +--------------+   +--------------+
+ | .rodata      |    |   Heap -->   |   | 0x3FF        |
+ | (constants)  |    |              |   +--------------+
+ +--------------+    |   <-- Stack  |
+ | Bootloader   |    +--------------+
+ | 0x7FFF       |    | 0x08FF       |
+ +--------------+    +--------------+
+```
+
 ## Writing the Makefile
 
 <InArticleAd />
@@ -180,6 +238,20 @@ clean:
 	rm -f $(TARGET).elf $(TARGET).hex
 
 .PHONY: all flash fuses clean
+```
+
+The USB connection between your computer and the Arduino Nano looks like this electrically. The CH340 or FTDI chip on the Nano translates USB to TTL serial, which connects to the ATmega328P UART pins used by the bootloader during flashing.
+
+```text
+  +-----------+     USB cable     +-----------+
+  |    PC     |==================|  Arduino  |
+  |           |                  |   Nano    |
+  | Serial    |    +--------+   |           |
+  | terminal  |<-->| CH340  |<->| ATmega328P|
+  | (115200)  |    | USB-to-|   | RXD (PD0) |
+  |           |    | serial |   | TXD (PD1) |
+  +-----------+    +--------+   +-----------+
+                   (on Nano PCB)
 ```
 
 The Makefile defaults to `/dev/ttyUSB0`, which is typical on Linux. On macOS the port is usually `/dev/cu.usbserial-XXX`, and on Windows it is something like `COM3`. Adjust the PORT variable to match your system.

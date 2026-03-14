@@ -62,6 +62,32 @@ Two LDRs (light-dependent resistors) are mounted side by side in voltage divider
 <InArticleAd />
 
 
+The ATmega328P ADC converts an analog voltage to a 10-bit digital value using successive approximation. The input multiplexer selects which pin feeds the converter, and the prescaler generates a suitable ADC clock from the system clock.
+
+```text
+  ATmega328P ADC block diagram:
+
+  ADC0 (PC0) --+
+  ADC1 (PC1) --+    +--------+   +----------+
+  ADC2 (PC2) --+--->|  MUX   |-->|   S/H    |
+  ADC3 (PC3) --+    | (ADMUX)|   | (sample  |
+  ADC4 (PC4) --+    +--------+   |  & hold) |
+  ADC5 (PC5) --+        |        +----+-----+
+  Temp sensor--+     channel          |
+  1.1V ref  ---+     select           v
+                              +---------------+
+  AVCC --+--> Reference -+--->|  10-bit SAR   |
+  AREF --+    select     |   |  Converter    |
+  1.1V --+   (REFS1:0)   |   +-------+-------+
+                          |           |
+  F_CPU --> Prescaler ----+     +-----+-----+
+            (ADPS2:0)     |     | ADCL/ADCH |
+            /128=125kHz   |     | (result)  |
+                          |     +-----------+
+                          |
+                     ADC clock
+```
+
 The ATmega328P ADC is a successive-approximation converter with 10-bit resolution. It has 8 multiplexed input channels (ADC0 through ADC7, though ADC6 and ADC7 are only available on surface-mount packages). Three registers control the ADC: ADMUX selects the reference voltage and input channel, ADCSRA controls the enable, start, prescaler, and interrupt, and ADCSRB selects the trigger source for auto-trigger mode.
 
 | Register | Purpose |
@@ -158,6 +184,21 @@ static uint16_t adc_read_freerun(void)
 <InArticleAd />
 
 
+Averaging reduces noise by canceling out random fluctuations. Each individual sample has noise, but the mean of 16 samples is much closer to the true value.
+
+```text
+  Effect of oversampling (16 samples):
+
+  Raw samples (noisy):
+  512 508 515 510 513 507 514 511
+  509 516 510 512 508 513 511 510
+
+  Average: 512 (clean)
+
+  Noise reduction = sqrt(N) = sqrt(16) = 4x
+  Effective resolution gain: ~2 bits
+```
+
 ADC readings are noisy, especially on a breadboard with long wires and a switching USB power supply. Averaging multiple samples reduces random noise by the square root of the number of samples. Sixteen samples averaged together reduce noise by a factor of 4 (roughly 2 extra bits of effective resolution). The trade-off is slower update rate, but at 125 kHz ADC clock, 16 conversions still complete in under 2 milliseconds.
 
 ```c
@@ -178,7 +219,26 @@ static uint16_t adc_read_averaged(uint8_t channel)
 <InArticleAd />
 
 
-Each LDR forms a voltage divider with a fixed 10K resistor. The LDR connects from the ADC pin to VCC, and the 10K resistor connects from the ADC pin to ground. In bright light, the LDR resistance drops (to around 1K or less), and the voltage at the ADC pin rises toward VCC. In darkness, the LDR resistance increases (to hundreds of kilohms), and the voltage drops toward ground.
+Each LDR forms a voltage divider with a fixed 10K resistor.
+
+```text
+  Dual LDR circuit:
+
+       VCC            VCC
+        |              |
+      [LDR]          [LDR]
+      Left           Right
+        |              |
+  PC0 --+         PC1--+
+  (ADC0) |        (ADC1)|
+        |              |
+      [10K]          [10K]
+        |              |
+       GND            GND
+
+  Bright light: LDR low R, high V at ADC
+  Darkness:     LDR high R, low V at ADC
+``` The LDR connects from the ADC pin to VCC, and the 10K resistor connects from the ADC pin to ground. In bright light, the LDR resistance drops (to around 1K or less), and the voltage at the ADC pin rises toward VCC. In darkness, the LDR resistance increases (to hundreds of kilohms), and the voltage drops toward ground.
 
 | Signal | Arduino Pin | ATmega328P Pin | Connection |
 |--------|------------|----------------|------------|

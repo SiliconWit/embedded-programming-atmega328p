@@ -60,6 +60,24 @@ A continuous temperature logger that samples an NTC thermistor once per second, 
 <InArticleAd />
 
 
+A UART frame at 8N1 consists of a start bit (always low), eight data bits (LSB first), and a stop bit (always high). The idle state is high, so the receiver detects the falling edge of the start bit to begin sampling each bit at the center of its period.
+
+```text
+  UART 8N1 frame format (one byte):
+
+  Idle  Start D0  D1  D2  D3  D4  D5  D6  D7 Stop Idle
+  ____       ___     ___         ___ ___ ___  _______
+      |     |   |   |   |       |   |   |   |
+      |_____|   |___|   |_______|   |   |   |
+       ^                                      ^
+     start                                  stop
+     bit                                    bit
+
+  Bit period = 1 / baud_rate
+  At 9600 baud: ~104 us per bit
+  Total frame: 10 bits = ~1.04 ms
+```
+
 The ATmega328P has one USART peripheral (USART0) controlled by five registers. UDR0 is the data register for both transmit and receive. UCSR0A holds status flags (transmit complete, receive complete, data register empty). UCSR0B enables the transmitter, receiver, and interrupts. UCSR0C sets the frame format. UBRR0 (split into UBRR0H and UBRR0L) sets the baud rate.
 
 | Register | Purpose |
@@ -140,7 +158,30 @@ static void uart_puts(const char *s)
 <InArticleAd />
 
 
-A ring buffer (circular buffer) decouples the producer (main code adding characters) from the consumer (UART hardware sending them). The main code writes to the buffer and enables the UDRE interrupt. The ISR sends one byte at a time and disables itself when the buffer is empty. This prevents the main loop from stalling while long strings are transmitted.
+A ring buffer (circular buffer) decouples the producer (main code adding characters) from the consumer (UART hardware sending them).
+
+```text
+  Ring buffer (64 bytes):
+
+  +---+---+---+---+---+---+---+---+
+  | A | B | C | D |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+    ^               ^
+    tail            head
+    (ISR reads      (main writes
+     next byte)      next byte)
+
+  After ISR sends 'A' and main writes 'E':
+
+  +---+---+---+---+---+---+---+---+
+  |   | B | C | D | E |   |   |   |
+  +---+---+---+---+---+---+---+---+
+        ^               ^
+        tail            head
+
+  Wraps around when head or tail
+  reaches the end of the array.
+``` The main code writes to the buffer and enables the UDRE interrupt. The ISR sends one byte at a time and disables itself when the buffer is empty. This prevents the main loop from stalling while long strings are transmitted.
 
 ```c
 #define TX_BUF_SIZE 64
@@ -178,6 +219,22 @@ static void tx_puts(const char *s)
 
 <InArticleAd />
 
+
+The thermistor and fixed resistor form a voltage divider whose output voltage changes with temperature. The ADC reads this voltage and the firmware converts it to degrees Celsius.
+
+```text
+         VCC (5V)
+          |
+        [NTC]  10K at 25C
+          |    (resistance drops
+          +--- as temp rises)
+          |
+  ADC0 --+---> to ATmega328P PC0
+          |
+        [R1]  10K fixed
+          |
+         GND
+```
 
 The NTC thermistor forms a voltage divider with a fixed 10K resistor. The thermistor connects from the ADC input to VCC, and the fixed resistor connects from the ADC input to ground. As temperature increases, the thermistor resistance decreases, and the voltage at the ADC pin drops. The Steinhart-Hart equation (simplified B-parameter version) converts resistance to temperature.
 

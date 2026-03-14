@@ -60,7 +60,27 @@ A 128x64 OLED display driven over SPI shows a running clock in large digits (HH:
 <InArticleAd />
 
 
-SPI uses four signals: MOSI (Master Out Slave In), MISO (Master In Slave Out), SCK (Serial Clock), and SS (Slave Select, active low). The master generates the clock and drives MOSI while reading MISO. Data is exchanged simultaneously in both directions, one bit per clock edge. The slave is selected by pulling its SS line low.
+SPI uses four signals: MOSI (Master Out Slave In), MISO (Master In Slave Out), SCK (Serial Clock), and SS (Slave Select, active low).
+
+```text
+  SPI Master-Slave Connection:
+
+  ATmega328P (Master)        SSD1306 OLED (Slave)
+  +------------------+       +------------------+
+  |                  |       |                  |
+  |  MOSI (PB3) ----+------>| DIN (data in)    |
+  |                  |       |                  |
+  |  MISO (PB4) <---+-------| (not used)       |
+  |                  |       |                  |
+  |  SCK  (PB5) ----+------>| CLK (clock)      |
+  |                  |       |                  |
+  |  SS   (PB2) ----+------>| CS  (chip select)|
+  |                  |       |                  |
+  +------------------+       +------------------+
+
+  Data shifts out MOSI on each SCK edge.
+  SS must be LOW to select the slave.
+``` The master generates the clock and drives MOSI while reading MISO. Data is exchanged simultaneously in both directions, one bit per clock edge. The slave is selected by pulling its SS line low.
 
 | Signal | ATmega328P Pin | Arduino Pin | Direction |
 |--------|---------------|-------------|-----------|
@@ -127,6 +147,29 @@ The 7-pin SPI OLED module has the following connections:
 
 <InArticleAd />
 
+
+The SSD1306 has a 128x64 pixel display organized into 8 pages. Each page is 8 pixels tall, and each byte in a page represents a vertical column of 8 pixels.
+
+```text
+  SSD1306 display memory layout:
+
+  128 columns
+  <------------------------------>
+  +-----+-----+-----+-- --+-----+ Page 0
+  |byte0|byte1|byte2| ...  |b127 | (rows 0-7)
+  +-----+-----+-----+-- --+-----+
+  +-----+-----+-----+-- --+-----+ Page 1
+  |b128 |b129 |b130 | ...  |b255 | (rows 8-15)
+  +-----+-----+-----+-- --+-----+
+   ...                             ...
+  +-----+-----+-----+-- --+-----+ Page 7
+  |b896 |b897 |b898 | ...  |b1023| (rows 56-63)
+  +-----+-----+-----+-- --+-----+
+
+  Each byte = 8 vertical pixels:
+  bit 0 = top pixel, bit 7 = bottom
+  Total: 128 x 8 = 1024 bytes
+```
 
 The SSD1306 distinguishes between commands and data using the D/C pin: low for commands, high for pixel data. The initialization sequence configures the display for 128x64 resolution with horizontal addressing mode. After initialization, you write pixel data as a 1024-byte stream (128 columns by 8 pages, each page is 8 pixels tall).
 
@@ -338,6 +381,26 @@ int main(void)
 
 <InArticleAd />
 
+
+The SPI transfer timing in Mode 0 (CPOL=0, CPHA=0) samples data on the rising edge of SCK. The SSD1306 uses this mode. The SPIF flag sets after 8 clocks, signaling the transfer is complete.
+
+```text
+  SPI Mode 0 byte transfer:
+
+  SCK:  _   _   _   _   _   _   _   _
+       | | | | | | | | | | | | | | | |
+  _____|  |_|  |_|  |_|  |_|  |_|  |_|__
+
+  MOSI: X D7 X D6 X D5 X D4 X D3 X D2 X D1 X D0
+        (data changes on falling edge,
+         sampled on rising edge)
+
+  CS:   ____                          ____
+            |________________________|
+
+  SPIF: ______________________________
+                                      |__| set
+```
 
 The SPI clock speed is set by the SPI2X bit in SPSR and the SPR1/SPR0 bits in SPCR. The SSD1306 supports SPI clocks up to about 10 MHz, so the default F_CPU/4 (4 MHz) works well. If you need faster transfers, enable SPI2X for F_CPU/2 (8 MHz).
 

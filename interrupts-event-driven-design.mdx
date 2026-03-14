@@ -63,7 +63,34 @@ This lesson reuses parts from previous lessons. The LED is the onboard Nano LED 
 <InArticleAd />
 
 
-When an interrupt fires, the CPU finishes the current instruction, pushes the program counter onto the stack, disables global interrupts, and jumps to the corresponding interrupt vector. The interrupt service routine (ISR) executes, then the CPU restores the program counter and re-enables interrupts via the RETI instruction. The entire process takes a minimum of 4 clock cycles for the vector jump alone.
+When an interrupt fires, the CPU finishes the current instruction, pushes the program counter onto the stack, disables global interrupts, and jumps to the corresponding interrupt vector.
+
+```text
+  Interrupt flow on ATmega328P:
+
+  Main code running
+        |
+        v
+  [Event occurs]  (e.g., INT0 falling edge)
+        |
+        v
+  CPU finishes current instruction
+        |
+        v
+  Push PC onto stack, disable global IRQ
+        |
+        v
+  Jump to vector address (e.g., 0x0002)
+        |
+        v
+  Execute ISR (your handler code)
+        |
+        v
+  RETI: pop PC, re-enable global IRQ
+        |
+        v
+  Resume main code where it left off
+``` The interrupt service routine (ISR) executes, then the CPU restores the program counter and re-enables interrupts via the RETI instruction. The entire process takes a minimum of 4 clock cycles for the vector jump alone.
 
 ### Interrupt Types on ATmega328P
 
@@ -81,6 +108,28 @@ When an interrupt fires, the CPU finishes the current instruction, pushes the pr
 
 <InArticleAd />
 
+
+The ATmega328P vector table sits at the start of flash. Each entry is a 2-word jump instruction pointing to the handler for that interrupt source.
+
+```text
+  ATmega328P Vector Table (partial):
+
+  Address  Vector           Handler
+  -------  ---------------  ----------------
+  0x0000   RESET            Reset_Handler
+  0x0002   INT0             INT0_vect
+  0x0004   INT1             INT1_vect
+  0x0006   PCINT0           PCINT0_vect
+  0x0008   PCINT1           PCINT1_vect
+  0x000A   PCINT2           PCINT2_vect
+  0x000C   WDT              WDT_vect
+  0x000E   TIMER2_COMPA     TIMER2_COMPA_vect
+   ...      ...              ...
+  0x0020   TIMER1_COMPA     TIMER1_COMPA_vect
+   ...      ...              ...
+  0x0030   USART_RX         USART_RX_vect
+  0x0032   USART_UDRE       USART_UDRE_vect
+```
 
 INT0 and INT1 are the two dedicated external interrupt pins. You configure the trigger condition in EICRA (External Interrupt Control Register A) and enable the interrupt in EIMSK (External Interrupt Mask Register). The trigger options are: low level (00), any logical change (01), falling edge (10), or rising edge (11).
 
@@ -321,7 +370,25 @@ ISR(PCINT0_vect)
 <InArticleAd />
 
 
-When a variable wider than 8 bits is shared between an ISR and main code, the main code might read half the variable, get interrupted, and the ISR updates it, then the main code reads the other half. This gives a corrupted value. The ATOMIC_BLOCK macro from util/atomic.h temporarily disables interrupts during the read, guaranteeing a consistent value.
+When a variable wider than 8 bits is shared between an ISR and main code, the main code might read half the variable, get interrupted, and the ISR updates it, then the main code reads the other half.
+
+```text
+  Race condition with 16-bit variable:
+
+  Main code         ISR fires here
+  ---------         ---------------
+  Read low byte     |
+  of counter        v
+  (gets 0xFF)     counter changes
+                  from 0x00FF to 0x0100
+  Read high byte
+  of counter
+  (gets 0x01)
+
+  Result: main reads 0x01FF (corrupt!)
+  Actual values were 0x00FF then 0x0100
+  ATOMIC_BLOCK prevents this.
+``` This gives a corrupted value. The ATOMIC_BLOCK macro from util/atomic.h temporarily disables interrupts during the read, guaranteeing a consistent value.
 
 ```c
 #include <util/atomic.h>

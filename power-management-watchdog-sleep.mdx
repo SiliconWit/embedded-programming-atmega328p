@@ -71,7 +71,35 @@ This lesson uses a standalone ATmega328P running from the internal 8 MHz RC osci
 <InArticleAd />
 
 
-The ATmega328P has six sleep modes, each disabling progressively more hardware to save power. The deeper the sleep, the fewer wake sources are available and the longer it takes to resume execution. Power-down mode disables everything except the external interrupt logic and the watchdog timer, achieving the lowest possible current draw.
+The ATmega328P has six sleep modes, each disabling progressively more hardware to save power. The deeper modes save more current but limit which events can wake the CPU.
+
+```text
+  Sleep mode hierarchy (shallow to deep):
+
+  +----------------+  ~3 mA    Any interrupt wakes
+  |     Idle       |
+  +-------+--------+
+          |
+  +-------+--------+  ~1 mA    ADC, ext int, Timer2
+  | ADC Noise Red. |
+  +-------+--------+
+          |
+  +-------+--------+  ~1 uA    Timer2, ext int
+  |  Power-save    |
+  +-------+--------+
+          |
+  +-------+--------+  ~0.1 uA  INT0/1, PCINT, TWI
+  |  Power-down    |           (used in this lesson)
+  +-------+--------+
+          |
+  +-------+--------+  ~0.2 uA  Same + faster wake
+  |    Standby     |
+  +-------+--------+
+          |
+  +-------+--------+  ~0.2 uA  + Timer2 async
+  | Ext. Standby   |
+  +----------------+
+``` The deeper the sleep, the fewer wake sources are available and the longer it takes to resume execution. Power-down mode disables everything except the external interrupt logic and the watchdog timer, achieving the lowest possible current draw.
 
 | Sleep Mode | Current (typical) | What Stays Running | Wake Sources |
 |-----------|-------------------|-------------------|--------------|
@@ -144,6 +172,41 @@ Getting to sub-microamp sleep current requires more than just calling sleep_mode
 <InArticleAd />
 
 
+The door alert firmware spends nearly all its time asleep, waking only on two events. The watchdog provides a periodic heartbeat, while INT0 signals an immediate alarm condition.
+
+```text
+  Door alert firmware flow:
+
+  +-------------+
+  |  Power on   |
+  +------+------+
+         |
+         v
+  +------+------+
+  | Init GPIO,  |
+  | WDT, INT0   |
+  +------+------+
+         |
+         v
+  +------+------+<-----+<-----+
+  | Enter       |      |      |
+  | Power-down  |      |      |
+  | sleep       |      |      |
+  +------+------+      |      |
+         |              |      |
+    [wake source?]      |      |
+     /         \        |      |
+    v           v       |      |
+  [WDT]     [INT0]     |      |
+    |       (door)      |      |
+    v           v       |      |
+  Blink     Beep 2s    |      |
+  LED once  Blink 3x   |      |
+    |           |       |      |
+    +-----------+-------+      |
+                               |
+```
+
 The watchdog timer (WDT) has two uses: as a safety mechanism that resets the chip if the firmware hangs, and as a periodic wakeup source during sleep. It runs from a separate 128 kHz internal oscillator that operates independently of the main clock. The WDT can be configured with timeout periods from 16 ms to 8 seconds.
 
 ### Watchdog Timeout Periods
@@ -192,6 +255,31 @@ ISR(WDT_vect)
 
 <InArticleAd />
 
+
+The standalone ATmega328P circuit runs from two AA batteries with minimal external components. No crystal is needed because the internal 8 MHz oscillator provides the clock.
+
+```text
+  Standalone ATmega328P circuit:
+
+       2x AA (3V)
+        +  -
+        |  |
+  +-----+--+---------+
+  | VCC    GND        |
+  |                   |
+  |   ATmega328P-PU   |
+  |                   |
+  |  PB0---[220R]---[LED]---GND
+  |  PB1---[Piezo buzzer]---GND
+  |  PD2---[Reed switch]---GND
+  |                   |
+  |  VCC---[100nF]---GND (decoupling)
+  |                   |
+  +-------------------+
+
+  Programming: connect USBasp to
+  MOSI, MISO, SCK, RESET, VCC, GND
+```
 
 A magnetic reed switch is a glass tube containing two ferromagnetic contacts that close in the presence of a magnet. The normally-closed (NC) type keeps the contacts closed when the magnet is near (door closed) and opens them when the magnet moves away (door opens). Wire one terminal to the MCU pin and the other to ground. Enable the internal pull-up on the MCU pin. When the door is closed, the pin reads low (shorted to ground). When the door opens, the pin goes high (pulled up).
 
