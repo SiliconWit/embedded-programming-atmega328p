@@ -240,7 +240,7 @@ Each LDR forms a voltage divider with a fixed 10K resistor.
   Darkness:     LDR high R, low V at ADC
 ```
 
-The LDR connects from the ADC pin to VCC, and the 10K resistor connects from the ADC pin to ground. In bright light, the LDR resistance drops (to around 1K or less), and the voltage at the ADC pin rises toward VCC. In darkness, the LDR resistance increases (to hundreds of kilohms), and the voltage drops toward ground.
+The LDR connects from the ADC pin to VCC, and the 10K resistor connects from the ADC pin to ground. This is a standard [voltage divider](/education/analog-electronics/voltage-current-resistance/) configuration. In bright light, the LDR resistance drops (to around 1K or less), and the voltage at the ADC pin rises toward VCC. In darkness, the LDR resistance increases (to hundreds of kilohms), and the voltage drops toward ground.
 
 | Signal | Arduino Pin | ATmega328P Pin | Connection |
 |--------|------------|----------------|------------|

@@ -95,6 +95,8 @@ For a single pin, the DDRx and PORTx bits combine to select one of four configur
 
 ### Bit Manipulation Patterns
 
+These operations rely on binary and hexadecimal representations of register values. For a refresher on number systems and bitwise logic, see [Digital Electronics: Binary, Hex, and Number Systems](/education/digital-electronics/binary-hex-number-systems/).
+
 ```c
 /* Set bit (make pin output or drive high) */
 DDRB |= (1 << PB5);

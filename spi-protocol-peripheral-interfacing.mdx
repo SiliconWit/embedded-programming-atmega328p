@@ -82,7 +82,7 @@ SPI uses four signals: MOSI (Master Out Slave In), MISO (Master In Slave Out), S
   SS must be LOW to select the slave.
 ```
 
-The master generates the clock and drives MOSI while reading MISO. Data is exchanged simultaneously in both directions, one bit per clock edge. The slave is selected by pulling its SS line low.
+The master generates the clock and drives MOSI while reading MISO. Data is exchanged simultaneously in both directions, one bit per clock edge. The slave is selected by pulling its SS line low. For a broader comparison of SPI, I2C, and other common bus topologies, see [Digital Electronics: Bus Architecture and Interfaces](/education/digital-electronics/bus-architecture-interfaces/).
 
 | Signal | ATmega328P Pin | Arduino Pin | Direction |
 |--------|---------------|-------------|-----------|

@@ -133,7 +133,7 @@ The ATmega328P vector table sits at the start of flash. Each entry is a 2-word j
   0x0032   USART_UDRE       USART_UDRE_vect
 ```
 
-INT0 and INT1 are the two dedicated external interrupt pins. You configure the trigger condition in EICRA (External Interrupt Control Register A) and enable the interrupt in EIMSK (External Interrupt Mask Register). The trigger options are: low level (00), any logical change (01), falling edge (10), or rising edge (11).
+INT0 and INT1 are the two dedicated external interrupt pins. You configure the trigger condition in EICRA (External Interrupt Control Register A) and enable the interrupt in EIMSK (External Interrupt Mask Register). The trigger options are: low level (00), any logical change (01), falling edge (10), or rising edge (11). For more on how vector tables, interrupt controllers, and CPU architecture fit together, see [Digital Electronics: Microcontroller Architecture Overview](/education/digital-electronics/microcontroller-architecture-overview/).
 
 ```c
 /* INT0 on falling edge */

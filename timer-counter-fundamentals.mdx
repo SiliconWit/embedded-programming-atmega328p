@@ -104,7 +104,7 @@ Each timer in the ATmega328P is a hardware counter clocked by the system clock (
 
 ### Prescaler Options
 
-The prescaler divides the system clock before it reaches the timer counter. A 16 MHz clock with prescaler 8 gives a 2 MHz timer tick, meaning each count takes 0.5 microseconds. Larger prescalers allow longer intervals but reduce resolution.
+The prescaler divides the system clock before it reaches the timer counter. A 16 MHz clock with prescaler 8 gives a 2 MHz timer tick, meaning each count takes 0.5 microseconds. Larger prescalers allow longer intervals but reduce resolution. For a broader look at how counters, prescalers, and frequency dividers work at the digital logic level, see [Digital Electronics: Counters, Timers, and Dividers](/education/digital-electronics/counters-timers-dividers/).
 
 | Prescaler | Timer Clock (at 16 MHz) | Tick Period | 8-bit Max Period | 16-bit Max Period |
 |-----------|------------------------|-------------|-------------------|-------------------|
