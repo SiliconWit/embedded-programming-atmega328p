@@ -152,6 +152,7 @@ TWBR = ((16000000 / 100000) - 16) / 2 = 72
 #define TWI_FREQ 100000UL
 
 #include <avr/io.h>
+#include <stdlib.h>
 #include <util/delay.h>
 
 static void twi_init(void)
@@ -410,11 +411,29 @@ int main(void)
 
         /* Format and display */
         fb_clear();
+        fb_draw_string(0, 0, "BME280 Sensor");
 
-        /* Temperature: e.g., "T: 23.45 C" */
-        /* Humidity:    e.g., "H: 55.2 %" */
-        /* Pressure:    e.g., "P: 1013 hPa" */
-        /* (Use fb_draw_string with formatted buffers) */
+        char buf[16];
+        int16_t temp_whole = (int16_t)(temp_100 / 100);
+        int16_t temp_frac  = (int16_t)(temp_100 % 100);
+        if (temp_frac < 0) temp_frac = -temp_frac;
+
+        fb_draw_string(0, 2, "Temp:");
+        itoa(temp_whole, buf, 10);
+        fb_draw_string(36, 2, buf);
+        fb_draw_string(60, 2, ".");
+        utoa(temp_frac, buf, 10);
+        fb_draw_string(66, 2, buf);
+        fb_draw_string(84, 2, "C");
+
+        fb_draw_string(0, 4, "Hum:");
+        utoa((uint16_t)(humid_1024 / 1024), buf, 10);
+        fb_draw_string(30, 4, buf);
+        fb_draw_string(54, 4, "%");
+
+        fb_draw_string(0, 6, "hPa:");
+        utoa((uint16_t)(press_256 / 25600), buf, 10);
+        fb_draw_string(30, 6, buf);
 
         oled_flush();
         _delay_ms(2000);
