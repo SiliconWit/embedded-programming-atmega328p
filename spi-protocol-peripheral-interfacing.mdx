@@ -65,18 +65,18 @@ SPI uses four signals: MOSI (Master Out Slave In), MISO (Master In Slave Out), S
 ```text
   SPI Master-Slave Connection:
 
-  ATmega328P (Master)        SSD1306 OLED (Slave)
-  +------------------+       +------------------+
-  |                  |       |                  |
-  |  MOSI (PB3) ----+------>| DIN (data in)    |
-  |                  |       |                  |
-  |  MISO (PB4) <---+-------| (not used)       |
-  |                  |       |                  |
-  |  SCK  (PB5) ----+------>| CLK (clock)      |
-  |                  |       |                  |
-  |  SS   (PB2) ----+------>| CS  (chip select)|
-  |                  |       |                  |
-  +------------------+       +------------------+
+  ATmega328P (Master)         SSD1306 OLED (Slave)
+  +------------------+       +-------------------+
+  |                  |       |                   |
+  |  MOSI (PB3) -----+------>| DIN (data in)     |
+  |                  |       |                   |
+  |  MISO (PB4) <----+-------| (not used)        |
+  |                  |       |                   |
+  |  SCK  (PB5) -----+------>| CLK (clock)       |
+  |                  |       |                   |
+  |  SS   (PB2) -----+------>| CS  (chip select) |
+  |                  |       |                   |
+  +------------------+       +-------------------+
 
   Data shifts out MOSI on each SCK edge.
   SS must be LOW to select the slave.

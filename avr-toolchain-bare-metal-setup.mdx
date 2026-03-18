@@ -243,15 +243,16 @@ clean:
 The USB connection between your computer and the Arduino Nano looks like this electrically. The CH340 or FTDI chip on the Nano translates USB to TTL serial, which connects to the ATmega328P UART pins used by the bootloader during flashing.
 
 ```text
-  +-----------+     USB cable     +-----------+
-  |    PC     |==================|  Arduino  |
-  |           |                  |   Nano    |
-  | Serial    |    +--------+   |           |
-  | terminal  |<-->| CH340  |<->| ATmega328P|
-  | (115200)  |    | USB-to-|   | RXD (PD0) |
-  |           |    | serial |   | TXD (PD1) |
-  +-----------+    +--------+   +-----------+
-                   (on Nano PCB)
+  +-----------+  USB cable  +---------------------------+
+  |    PC     |=============|       Arduino Nano        |
+  |           |             |                           |
+  | Serial    |             |  +--------+   +--------+  |
+  | terminal  |<----------->|  | CH340  |<->|ATmega  |  |
+  | (115200)  |             |  | USB-to-|   | 328P   |  |
+  |           |             |  | serial |   |RXD PD0 |  |
+  |           |             |  +--------+   |TXD PD1 |  |
+  +-----------+             |               +--------+  |
+                            +---------------------------+
 ```
 
 The Makefile defaults to `/dev/ttyUSB0`, which is typical on Linux. On macOS the port is usually `/dev/cu.usbserial-XXX`, and on Windows it is something like `COM3`. Adjust the PORT variable to match your system.

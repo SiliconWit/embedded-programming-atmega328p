@@ -127,18 +127,20 @@ Wire the four LEDs with their anodes to PD2 through PD5 (through 220 ohm resisto
           ATmega328P
          +-----------+
          |           |
-   VCC---+---[10K]---+--PD6 (Button)
-         |           |     |
-         |   PD2 ----+--[220R]--[LED1]--GND
-         |   PD3 ----+--[220R]--[LED2]--GND
-         |   PD4 ----+--[220R]--[LED3]--GND
-         |   PD5 ----+--[220R]--[LED4]--GND
+         |       PD6-+---+---[10K]---VCC
+         |           |   |
+         |           |  [BTN] (press = LOW)
+         |           |   |
+         |           |  GND
          |           |
-         +-----------+
-                     |
-                    GND
-         Button: normally open to GND
-         Press pulls PD6 low
+         |      PD2--+--[220R]--[LED1]--GND
+         |      PD3--+--[220R]--[LED2]--GND
+         |      PD4--+--[220R]--[LED3]--GND
+         |      PD5--+--[220R]--[LED4]--GND
+         |           |
+         +-----+-----+
+               |
+              GND
 ```
 
 Alternatively, you can skip the external pull-up and enable the internal pull-up in software by setting the PORTx bit while the pin is configured as input.
