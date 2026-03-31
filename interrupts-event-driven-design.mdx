@@ -65,31 +65,15 @@ This lesson reuses parts from previous lessons. The LED is the onboard Nano LED 
 
 When an interrupt fires, the CPU finishes the current instruction, pushes the program counter onto the stack, disables global interrupts, and jumps to the corresponding interrupt vector.
 
-```text
-  Interrupt flow on ATmega328P:
-
-  Main code running
-        |
-        v
-  [Event occurs]  (e.g., INT0 falling edge)
-        |
-        v
-  CPU finishes current instruction
-        |
-        v
-  Push PC onto stack, disable global IRQ
-        |
-        v
-  Jump to vector address (e.g., 0x0002)
-        |
-        v
-  Execute ISR (your handler code)
-        |
-        v
-  RETI: pop PC, re-enable global IRQ
-        |
-        v
-  Resume main code where it left off
+```mermaid
+flowchart TD
+    A["Main code running"] --> B["Event occurs\ne.g. INT0 falling edge"]
+    B --> C["CPU finishes current instruction"]
+    C --> D["Push PC onto stack,\ndisable global IRQ"]
+    D --> E["Jump to vector address\ne.g. 0x0002"]
+    E --> F["Execute ISR\nyour handler code"]
+    F --> G["RETI: pop PC,\nre-enable global IRQ"]
+    G --> H["Resume main code\nwhere it left off"]
 ```
 
 The interrupt service routine (ISR) executes, then the CPU restores the program counter and re-enables interrupts via the RETI instruction. The entire process takes a minimum of 4 clock cycles for the vector jump alone.
@@ -374,22 +358,17 @@ ISR(PCINT0_vect)
 
 When a variable wider than 8 bits is shared between an ISR and main code, the main code might read half the variable, get interrupted, and the ISR updates it, then the main code reads the other half.
 
-```text
-  Race condition with 16-bit variable:
-
-  Main code         ISR fires here
-  ---------         ---------------
-  Read low byte     |
-  of counter        v
-  (gets 0xFF)     counter changes
-                  from 0x00FF to 0x0100
-  Read high byte
-  of counter
-  (gets 0x01)
-
-  Result: main reads 0x01FF (corrupt!)
-  Actual values were 0x00FF then 0x0100
-  ATOMIC_BLOCK prevents this.
+```mermaid
+sequenceDiagram
+    participant M as Main Code
+    participant I as ISR
+    Note over M: counter = 0x00FF
+    M->>M: Read low byte (gets 0xFF)
+    I-->>I: ISR fires!
+    Note over I: counter changes<br/>0x00FF to 0x0100
+    I-->>M: ISR returns
+    M->>M: Read high byte (gets 0x01)
+    Note over M: Result: 0x01FF (corrupt!)<br/>ATOMIC_BLOCK prevents this
 ```
 
 This gives a corrupted value. The ATOMIC_BLOCK macro from util/atomic.h temporarily disables interrupts during the read, guaranteeing a consistent value.

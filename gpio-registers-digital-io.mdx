@@ -5,7 +5,7 @@ contributors: "sam-macharia,lawrence-langat"
 pubDate: 2026-01-22
 tags: ["gpio", "registers", "digital-io", "bit-manipulation", "atmega328p", "avr"]
 excerpt: "Master ATmega328P GPIO registers (DDRx, PORTx, PINx) through direct bit manipulation. Build an electronic dice that displays a random pattern on LEDs when you press a button, with proper hardware debouncing."
-heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-4-LEDs-Button.png"
+heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/gpio-registers-digital-io.png"
 ---
 
 import TawkWidget from '../../../../components/TawkWidget.astro';
@@ -189,8 +189,8 @@ A real dice has a specific pip layout for each face. With four LEDs arranged in 
 | 2 | ON | OFF | OFF | ON | Diagonal |
 | 3 | ON | OFF | ON | ON | Triangle |
 | 4 | ON | ON | ON | ON | All corners |
-| 5 | ON | ON | ON | ON | All (plus flash) |
-| 6 | ON | ON | ON | ON | All (double flash) |
+| 5 | ON | ON | ON | ON | All + single blink |
+| 6 | ON | ON | ON | ON | All + double blink |
 
 ## Complete Firmware
 
@@ -234,8 +234,24 @@ static void show_dice(uint8_t value)
         case 2: pattern = (1<<PD2)|(1<<PD5); break;
         case 3: pattern = (1<<PD2)|(1<<PD4)|(1<<PD5); break;
         case 4: pattern = (1<<PD2)|(1<<PD3)|(1<<PD4)|(1<<PD5); break;
-        case 5: pattern = (1<<PD2)|(1<<PD3)|(1<<PD4)|(1<<PD5); break;
-        case 6: pattern = (1<<PD2)|(1<<PD3)|(1<<PD4)|(1<<PD5); break;
+        case 5: /* All + single blink to distinguish from 4 */
+            pattern = (1<<PD2)|(1<<PD3)|(1<<PD4)|(1<<PD5);
+            PORTD |= pattern;
+            delay_ms(100);
+            PORTD &= ~LED_MASK;
+            delay_ms(100);
+            break;
+        case 6: /* All + double blink to distinguish from 4 and 5 */
+            pattern = (1<<PD2)|(1<<PD3)|(1<<PD4)|(1<<PD5);
+            PORTD |= pattern;
+            delay_ms(100);
+            PORTD &= ~LED_MASK;
+            delay_ms(100);
+            PORTD |= pattern;
+            delay_ms(100);
+            PORTD &= ~LED_MASK;
+            delay_ms(100);
+            break;
     }
     PORTD |= pattern;
 }

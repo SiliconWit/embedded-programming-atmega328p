@@ -1,9 +1,9 @@
 ---
 title: "Power Management, Watchdog, and Sleep Modes"
-description: "Master ATmega328P low-power techniques including all six sleep modes, watchdog timer configuration, and BOD disable. Build a battery-powered door open alert that sleeps in power-down mode and wakes on a magnetic reed switch."
+description: "Master ATmega328P low-power techniques including all six sleep modes, watchdog timer configuration, BOD disable, and EEPROM storage. Build a battery-powered door open alert that sleeps in power-down mode, wakes on a magnetic reed switch, and counts events in non-volatile memory."
 contributors: "sam-macharia,lawrence-langat"
 pubDate: 2026-03-12
-tags: ["power-management", "sleep-modes", "watchdog", "battery", "low-power", "atmega328p", "avr"]
+tags: ["power-management", "sleep-modes", "watchdog", "battery", "low-power", "eeprom", "atmega328p", "avr"]
 excerpt: "Master ATmega328P low-power techniques including all six sleep modes, watchdog timer configuration, and BOD disable. Build a battery-powered door open alert that sleeps in power-down mode and wakes on a magnetic reed switch."
 heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/power-management-watchdog-sleep.png"
 ---
@@ -25,7 +25,7 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
-A microcontroller that runs continuously from a battery will drain it in hours. But the ATmega328P can drop its current consumption from roughly 12 mA down to under 1 microamp in power-down sleep mode. The difference between a project that lasts a day and one that lasts a year comes down to how well you manage sleep, wake sources, and peripheral shutdown. In this final lesson you will explore all six sleep modes, configure the watchdog timer as both a safety net and a periodic wakeup source, and build a battery-powered door open alert. The device sleeps almost all the time, wakes when a magnetic reed switch opens, beeps a piezo buzzer, and goes right back to sleep. #PowerManagement #SleepModes #LowPower
+A microcontroller that runs continuously from a battery will drain it in hours. But the ATmega328P can drop its current consumption from roughly 12 mA down to under 1 microamp in power-down sleep mode. The difference between a project that lasts a day and one that lasts a year comes down to how well you manage sleep, wake sources, and peripheral shutdown. In this lesson you will explore all six sleep modes, configure the watchdog timer as both a safety net and a periodic wakeup source, and build a battery-powered door open alert. The device sleeps almost all the time, wakes when a magnetic reed switch opens, beeps a piezo buzzer, and goes right back to sleep. #PowerManagement #SleepModes #LowPower
 
 ## What We Are Building
 
@@ -73,32 +73,13 @@ This lesson uses a standalone ATmega328P running from the internal 8 MHz RC osci
 
 The ATmega328P has six sleep modes, each disabling progressively more hardware to save power. The deeper modes save more current but limit which events can wake the CPU.
 
-```text
-  Sleep mode hierarchy (shallow to deep):
-
-  +----------------+  ~3 mA    Any interrupt wakes
-  |     Idle       |
-  +-------+--------+
-          |
-  +-------+--------+  ~1 mA    ADC, ext int, Timer2
-  | ADC Noise Red. |
-  +-------+--------+
-          |
-  +-------+--------+  ~1 uA    Timer2, ext int
-  |  Power-save    |
-  +-------+--------+
-          |
-  +-------+--------+  ~0.1 uA  INT0/1, PCINT, TWI
-  |  Power-down    |           (used in this lesson)
-  +-------+--------+
-          |
-  +-------+--------+  ~0.2 uA  Same + faster wake
-  |    Standby     |
-  +-------+--------+
-          |
-  +-------+--------+  ~0.2 uA  + Timer2 async
-  | Ext. Standby   |
-  +----------------+
+```mermaid
+flowchart TD
+    A["Idle\n~3 mA\nAny interrupt wakes"] --> B["ADC Noise Reduction\n~1 mA\nADC, ext int, Timer2"]
+    B --> C["Power-save\n~1 uA\nTimer2, ext int"]
+    C --> D["Power-down\n~0.1 uA\nINT0/1, PCINT, TWI"]
+    D --> E["Standby\n~0.2 uA\nSame + faster wake"]
+    E --> F["Ext. Standby\n~0.2 uA\n+ Timer2 async"]
 ```
 
 The deeper the sleep, the fewer wake sources are available and the longer it takes to resume execution. Power-down mode disables everything except the external interrupt logic and the watchdog timer, achieving the lowest possible current draw.
@@ -176,37 +157,15 @@ Getting to sub-microamp sleep current requires more than just calling sleep_mode
 
 The door alert firmware spends nearly all its time asleep, waking only on two events. The watchdog provides a periodic heartbeat, while INT0 signals an immediate alarm condition.
 
-```text
-  Door alert firmware flow:
-
-  +-------------+
-  |  Power on   |
-  +------+------+
-         |
-         v
-  +------+------+
-  | Init GPIO,  |
-  | WDT, INT0   |
-  +------+------+
-         |
-         v
-  +------+------+<-----+<-----+
-  | Enter       |      |      |
-  | Power-down  |      |      |
-  | sleep       |      |      |
-  +------+------+      |      |
-         |              |      |
-    [wake source?]      |      |
-     /         \        |      |
-    v           v       |      |
-  [WDT]     [INT0]     |      |
-    |       (door)      |      |
-    v           v       |      |
-  Blink     Beep 2s    |      |
-  LED once  Blink 3x   |      |
-    |           |       |      |
-    +-----------+-------+      |
-                               |
+```mermaid
+flowchart TD
+    A["Power on"] --> B["Init GPIO,\nWDT, INT0"]
+    B --> C["Enter Power-down\nsleep"]
+    C --> D{"Wake source?"}
+    D -->|WDT| E["Blink LED once"]
+    E --> C
+    D -->|"INT0 (door)"| F["Beep 2s,\nBlink 3x"]
+    F --> C
 ```
 
 The watchdog timer (WDT) has two uses: as a safety mechanism that resets the chip if the firmware hangs, and as a periodic wakeup source during sleep. It runs from a separate 128 kHz internal oscillator that operates independently of the main clock. The WDT can be configured with timeout periods from 16 ms to 8 seconds.
@@ -291,6 +250,39 @@ A magnetic reed switch is a glass tube containing two ferromagnetic contacts tha
 | Piezo buzzer | PB1 (OC1A) | Buzzer between PB1 and GND |
 | Status LED | PB0 | LED with 220R to GND |
 
+## EEPROM: Persistent Storage Across Power Cycles
+
+<InArticleAd />
+
+
+Lesson 1 introduced the ATmega328P's three memory spaces: Flash (program), SRAM (runtime variables), and EEPROM (non-volatile data). Flash and SRAM lose their contents when power is removed (SRAM) or can only be written during programming (Flash). EEPROM retains data through power cycles, making it ideal for storing configuration values, calibration constants, or event counters like our door-open count.
+
+The ATmega328P has 1024 bytes of EEPROM with a rated endurance of 100,000 write cycles per byte. Three registers control access:
+
+| Register | Purpose |
+|----------|---------|
+| EEARH:EEARL | Address (0 to 1023) |
+| EEDR | Data byte to read or write |
+| EECR | Control: EEMPE (master program enable), EEPE (program enable), EERE (read enable) |
+
+Writing a single byte requires a timed sequence: set the address and data, enable the master program bit, then enable the program bit within four clock cycles. The CPU halts for about 3.3 ms during the write. Reading is instant (one clock cycle after setting EERE).
+
+The avr-libc library provides `avr/eeprom.h` with convenient functions that handle the register sequence for you:
+
+```c
+#include <avr/eeprom.h>
+
+/* Read a 16-bit word from EEPROM address 0 */
+uint16_t count = eeprom_read_word((uint16_t *)0);
+
+/* Write only if the value changed (saves write cycles) */
+eeprom_update_word((uint16_t *)0, count + 1);
+```
+
+The `eeprom_update_*` functions are preferred over `eeprom_write_*` because they skip the write if the value is already correct, extending EEPROM lifespan. At 10 door events per day, 100,000 write cycles would last over 27 years.
+
+Our door alert will store the total number of door-open events at EEPROM address 0. Each time the reed switch triggers, the firmware increments the counter. On startup, the LED blinks the stored count (modulo 10) so you can check it without UART.
+
 ## Complete Firmware
 
 <InArticleAd />
@@ -309,11 +301,14 @@ This lesson uses a standalone ATmega328P at 8 MHz, not the Nano's 16 MHz. You ne
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 #include <avr/wdt.h>
+#include <avr/eeprom.h>
 #include <util/delay.h>
 
 #define LED_PIN    PB0
 #define BUZZER_PIN PB1
 #define REED_PIN   PD2  /* INT0 */
+
+#define EE_DOOR_COUNT ((uint16_t *)0)  /* EEPROM address for door counter */
 
 volatile uint8_t wdt_fired = 0;
 volatile uint8_t door_opened = 0;
@@ -352,7 +347,7 @@ static void buzzer_beep(uint16_t duration_ms)
 
     TCCR1A = (1 << COM1A0);  /* Toggle OC1A */
     TCCR1B = (1 << WGM12) | (1 << CS11);  /* CTC, prescaler 8 */
-    OCR1A = 499;  /* 8MHz / (2 * 8 * 500) = 1 kHz */
+    OCR1A = 499;  /* counts 0-499 (500 steps): 8MHz / (2 * 8 * 500) = 1 kHz */
 
     delay_ms(duration_ms);
 
@@ -416,8 +411,13 @@ int main(void)
     WDTCSR = (1 << WDIE) | (1 << WDP3) | (1 << WDP0);
     sei();
 
-    /* Startup indication */
-    led_blink(3, 100, 100);
+    /* Read door count from EEPROM and blink it (mod 10) at startup */
+    uint16_t door_count = eeprom_read_word(EE_DOOR_COUNT);
+    if (door_count == 0xFFFF) door_count = 0;  /* Fresh EEPROM reads as 0xFF */
+
+    uint8_t show = door_count % 10;
+    if (show > 0) led_blink(show, 150, 150);
+    else led_blink(3, 100, 100);  /* No events yet */
 
     while (1) {
         enter_deep_sleep();
@@ -426,6 +426,10 @@ int main(void)
 
         if (door_opened) {
             door_opened = 0;
+
+            /* Increment and save door count */
+            door_count++;
+            eeprom_update_word(EE_DOOR_COUNT, door_count);
 
             /* Sound alarm */
             buzzer_beep(2000);
@@ -534,7 +538,7 @@ The limiting factor in most battery-powered projects is the battery's self-disch
 
 1. Add a "low battery" warning: wake every 30 minutes, read the battery voltage via the internal bandgap reference trick (measure 1.1V bandgap against VCC), and if VCC drops below 2.4V, blink the LED rapidly.
 2. Replace the reed switch with a PIR motion sensor. The sensor's digital output goes high on motion and can drive INT0 directly.
-3. Implement a door-open counter stored in EEPROM. Each time the door opens, increment the count. On a special button press (hold during power-up), read and transmit the count over UART.
+3. Add a "reset counter" feature: if the button is held during power-up (reed switch closed), clear the EEPROM counter to zero and confirm with a long LED flash. This lets you start fresh after checking the count.
 4. Measure and compare the sleep current with and without BOD disabled, with and without the analog comparator disabled, and with floating pins vs. pulled-up pins. Document the contribution of each source.
 
 ## Summary
@@ -542,7 +546,7 @@ The limiting factor in most battery-powered projects is the battery's self-disch
 <InArticleAd />
 
 
-You now understand every power management feature of the ATmega328P: six sleep modes from Idle to Power-down, the Power Reduction Register, analog comparator disable, BOD disable during sleep, and the watchdog timer as both a safety mechanism and a periodic wakeup source. The door alert project demonstrates how a battery-powered device can sleep at sub-microamp levels and wake instantly on an external event. These techniques are essential for any embedded system that runs on batteries, and the principles apply directly to every other microcontroller family you will encounter.
+You now understand every power management feature of the ATmega328P: six sleep modes from Idle to Power-down, the Power Reduction Register, analog comparator disable, BOD disable during sleep, the watchdog timer as both a safety mechanism and a periodic wakeup source, and EEPROM for storing data that survives power cycles. The door alert project demonstrates how a battery-powered device can sleep at sub-microamp levels, wake instantly on an external event, and keep a persistent event log in non-volatile memory. These techniques are essential for any embedded system that runs on batteries, and the principles apply directly to every other microcontroller family you will encounter.
 
 <EmbeddedProgrammingAtmega328pComments />
 

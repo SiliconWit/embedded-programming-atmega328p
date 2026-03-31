@@ -158,6 +158,8 @@ static void uart_puts(const char *s)
 <InArticleAd />
 
 
+The complete firmware later in this lesson uses blocking TX for simplicity. The ring buffer technique shown here is a common optimization you can apply when your main loop cannot afford to wait for each byte to finish sending.
+
 A ring buffer (circular buffer) decouples the producer (main code adding characters) from the consumer (UART hardware sending them).
 
 ```text
@@ -248,7 +250,7 @@ The NTC thermistor forms a voltage divider with a fixed 10K resistor. The thermi
 
 Where T0 = 298.15 K (25 C), R0 = 10000 ohms, and B = 3950 (from the thermistor datasheet).
 
-From the ADC reading:
+The voltage at the ADC pin is determined by the voltage divider: V_adc = VCC * R_fixed / (R_therm + R_fixed). Since the 10-bit ADC maps 0 to VCC across 0 to 1023, the ADC reading is adc = 1023 * R_fixed / (R_therm + R_fixed). Solving for R_therm:
 
 ```
 R_therm = R_fixed * (1023 - adc) / adc

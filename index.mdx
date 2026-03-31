@@ -1,9 +1,9 @@
 ---
 title: "Embedded Programming: ATmega328P"
-description: "Learn bare-metal embedded C programming on the ATmega328P using an Arduino Nano. Nine lessons, nine real builds, from a Morse code beacon to a battery-powered door alert. No Arduino IDE, no libraries, just registers, datasheets, and understanding."
+description: "Learn bare-metal embedded C programming on the ATmega328P using an Arduino Nano. Ten lessons, ten real builds, from a Morse code beacon to a CNC-style stepper controller. No Arduino IDE, no libraries, just registers, datasheets, and understanding."
 pubDate: 2026-01-15
 tags: ["embedded-systems", "atmega328p", "avr", "bare-metal", "c-programming", "arduino-nano", "microcontroller", "registers", "uart", "spi", "i2c", "adc"]
-excerpt: "Master bare-metal embedded C programming on the ATmega328P. Each lesson builds a real project using only registers and datasheets. Covers GPIO, timers, interrupts, UART, SPI, I2C, ADC, and power management. The foundation every embedded engineer needs."
+excerpt: "Master bare-metal embedded C programming on the ATmega328P. Each lesson builds a real project using only registers and datasheets. Covers GPIO, timers, interrupts, UART, SPI, I2C, ADC, power management, EEPROM, and stepper motor control. The foundation every embedded engineer needs."
 heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-V3-Board-ATmega328P-CH340-5V-USB-C.png"
 ---
 
@@ -33,7 +33,7 @@ Learn embedded systems from the ground up by programming the ATmega328P in pure 
   </Card>
 
   <Card title="Minimal, Affordable Hardware" icon="approve-check">
-    An Arduino Nano costs under $5. A breadboard and a handful of components is all you need. No expensive dev kits, no debugger required to start. You can begin today.
+    An Arduino Nano costs under 5 USD. A breadboard and a handful of components is all you need. No expensive dev kits, no debugger required to start. You can begin today.
   </Card>
 </CardGrid>
 
@@ -106,8 +106,13 @@ Every lesson follows the same cycle:
   </Card>
 
   <Card title="Lesson 9: Power Management and Watchdog" icon="document">
-    [Power Management and Watchdog](./power-management-watchdog-sleep). Explore all sleep modes (Idle through Power-down), watchdog timer configuration, BOD disable, and wakeup sources. Build a battery-powered door open alert.
+    [Power Management and Watchdog](./power-management-watchdog-sleep). Explore all sleep modes (Idle through Power-down), watchdog timer configuration, BOD disable, EEPROM storage, and wakeup sources. Build a battery-powered door open alert with persistent event counting.
     **Build:** Battery-powered door alert. **Parts:** 2xAA battery holder, reed switch.
+  </Card>
+
+  <Card title="Lesson 10: Integrated Stepper Motor and Motion Control" icon="star">
+    [Integrated Stepper Motor and Motion Control](./integrated-stepper-motion-control). Combine every peripheral from the course into a single-axis CNC-style controller. Parse G-code over UART, generate step pulses with Timer1, home with a limit switch interrupt, jog with an ADC potentiometer, and store calibration in EEPROM.
+    **Build:** Single-axis stepper controller. **Parts:** A4988 driver, NEMA 17 motor, limit switch, 10K pot, 12V supply.
   </Card>
 </CardGrid>
 
@@ -117,30 +122,34 @@ Everything you need for the entire course, beyond the Arduino Nano:
 
 | Part | Quantity | First Used | Approximate Cost |
 |------|----------|------------|-----------------|
-| Arduino Nano (ATmega328P) | 1 | Lesson 1 | $3-5 |
-| Breadboard + jumper wires | 1 set | Lesson 1 | $3-5 |
-| LEDs (assorted colors) | 4 | Lesson 1 | $1 |
-| 220R resistors | 4 | Lesson 1 | $0.50 |
-| 10K resistors | 2 | Lesson 2 | $0.50 |
-| Push button | 1 | Lesson 2 | $0.25 |
-| Piezo buzzer | 1 | Lesson 3 | $0.50 |
-| 10K NTC thermistor | 1 | Lesson 5 | $0.50 |
-| SSD1306 OLED display (SPI) | 1 | Lesson 6 | $3-4 |
-| BME280 sensor module | 1 | Lesson 7 | $2-3 |
-| LDR photoresistors | 2 | Lesson 8 | $0.50 |
-| Reed switch | 1 | Lesson 9 | $0.50 |
-| 2xAA battery holder | 1 | Lesson 9 | $0.50 |
+| Arduino Nano (ATmega328P) | 1 | Lesson 1 | 3-5 USD |
+| Breadboard + jumper wires | 1 set | Lesson 1 | 3-5 USD |
+| LEDs (assorted colors) | 4 | Lesson 1 | 1 USD |
+| 220R resistors | 4 | Lesson 1 | 0.50 USD |
+| 10K resistors | 2 | Lesson 2 | 0.50 USD |
+| Push button | 1 | Lesson 2 | 0.25 USD |
+| Piezo buzzer | 1 | Lesson 3 | 0.50 USD |
+| 10K NTC thermistor | 1 | Lesson 5 | 0.50 USD |
+| SSD1306 OLED display (SPI) | 1 | Lesson 6 | 3-4 USD |
+| BME280 sensor module | 1 | Lesson 7 | 2-3 USD |
+| LDR photoresistors | 2 | Lesson 8 | 0.50 USD |
+| Reed switch | 1 | Lesson 9 | 0.50 USD |
+| 2xAA battery holder | 1 | Lesson 9 | 0.50 USD |
+| A4988 stepper driver module | 1 | Lesson 10 | 1-2 USD |
+| NEMA 17 stepper motor | 1 | Lesson 10 | 5-8 USD |
+| Limit switch (microswitch) | 1 | Lesson 10 | 0.25 USD |
+| 12V power supply | 1 | Lesson 10 | 3-5 USD |
 
-**Total estimated cost: $15-22** (including the Nano)
+**Total estimated cost: 25-38 USD** (including the Nano)
 
 ## Skill Progression
 
-| Skill | Lessons 1-3 | Lessons 4-5 | Lessons 6-7 | Lessons 8-9 |
-|-------|------------|------------|------------|------------|
-| **Registers** | GPIO, Timer/Counter | Interrupt vectors, USART | SPI, TWI (I2C) | ADC, sleep/watchdog |
-| **Patterns** | Polling, bit manipulation | ISR design, ring buffers | Protocol drivers | Signal processing, low power |
-| **Hardware** | LEDs, buttons, buzzer | Thermistor, serial | OLED display, BME280 sensor | LDRs, battery power |
-| **Tools** | avr-gcc, avrdude, make | Serial monitor | Logic analyzer (optional) | Multimeter for current draw |
+| Skill | Lessons 1-3 | Lessons 4-5 | Lessons 6-7 | Lessons 8-9 | Lesson 10 |
+|-------|------------|------------|------------|------------|-----------|
+| **Registers** | GPIO, Timer/Counter | Interrupt vectors, USART | SPI, TWI (I2C) | ADC, sleep/watchdog, EEPROM | All combined |
+| **Patterns** | Polling, bit manipulation | ISR design, ring buffers | Protocol drivers | Signal processing, low power | G-code parsing, motion control |
+| **Hardware** | LEDs, buttons, buzzer | Thermistor, serial | OLED display, BME280 sensor | LDRs, battery power | Stepper motor, driver, limit switch |
+| **Tools** | avr-gcc, avrdude, make | Serial monitor | Logic analyzer (optional) | Multimeter for current draw | Serial terminal, 12V supply |
 
 ## Prerequisites
 

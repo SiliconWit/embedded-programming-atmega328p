@@ -5,7 +5,7 @@ contributors: "sam-macharia,lawrence-langat"
 pubDate: 2026-01-15
 tags: ["avr", "toolchain", "bare-metal", "c-programming", "makefile", "avrdude", "avr-gcc", "arduino-nano"]
 excerpt: "Set up a complete AVR development environment with avr-gcc, avrdude, and Makefiles. Program an Arduino Nano directly in C without the Arduino IDE. Build a Morse code beacon that blinks your name on an LED."
-heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-LED-resistor.png"
+heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p/avr-toolchain-bare-metal-setup.png"
 ---
 
 import TawkWidget from '../../../../components/TawkWidget.astro';
@@ -25,11 +25,11 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
+import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
+
 Before you can write meaningful firmware, you need a toolchain you actually understand. In this lesson you will install avr-gcc, avrdude, and a handful of command-line utilities, then write a Makefile that compiles, links, and flashes C code onto an Arduino Nano or Uno. No Arduino IDE, no hidden abstractions. The project is a Morse code beacon: your LED blinks out your name in dots and dashes, proving you control every byte that lands on the chip. #AVR #BareMetal #CProgramming
 
-:::note[Nano or Uno?]
-Both the Arduino Nano and Arduino Uno use the same ATmega328P chip with identical pin mapping. Every pin number, register name, and code example in this course works on either board. We show the Nano in wiring diagrams because it fits directly into a breadboard, but you can follow along with an Uno and jumper wires just as easily.
-:::
+<PodcastEmbed src="https://open.spotify.com/episode/4UyRkT8wXCl4d6jTFAlVSY?si=enzl4wB8SPC8nHEllmRy9Q" />
 
 ### ATmega328P Pinout Reference
 
@@ -149,30 +149,13 @@ Create a project directory with the following layout:
 
 The entire process from source code to running firmware follows a fixed pipeline. Each tool in the chain transforms the code into a form closer to what the hardware needs.
 
-```text
- +----------+    +----------+    +----------+
- | main.c   |--->| avr-gcc  |--->| morse.elf|
- | (source) |    | compile  |    | (linked) |
- +----------+    | + link   |    +-----+----+
-                 +----------+          |
-                                       v
-                               +-------------+
-                               | avr-objcopy |
-                               | ELF -> HEX  |
-                               +------+------+
-                                      |
-                                      v
-                               +-------------+
-                               |   avrdude   |
-                               | flash over  |
-                               | USB serial  |
-                               +------+------+
-                                      |
-                                      v
-                               +-------------+
-                               | ATmega328P  |
-                               | (running)   |
-                               +-------------+
+```mermaid
+flowchart TD
+    A["main.c\n(source)"] --> B["avr-gcc\ncompile + link"]
+    B --> C["morse.elf\n(linked)"]
+    C --> D["avr-objcopy\nELF to HEX"]
+    D --> E["avrdude\nflash over USB"]
+    E --> F["ATmega328P\n(running)"]
 ```
 
 ## ATmega328P Memory Map

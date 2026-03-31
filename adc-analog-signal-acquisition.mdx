@@ -267,7 +267,8 @@ For AVcc reference (5V): an ADC reading of 512 corresponds to approximately 2.5V
 #include <util/delay.h>
 #include <string.h>
 
-/* Include SPI and OLED driver from Lesson 6 */
+/* From Lesson 6: spi_init(), oled_init(), oled_flush(),
+   fb_clear(), fb_draw_char(), fb_draw_string() */
 
 #define OVERSAMPLE 16
 #define BAR_MAX_WIDTH 50  /* pixels per bar */

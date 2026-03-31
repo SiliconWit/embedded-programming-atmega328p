@@ -62,27 +62,13 @@ A piezo buzzer driven by Timer1 in CTC mode with hardware toggle on the OC1A pin
 
 The timer subsystem takes the system clock, divides it through a prescaler, and feeds the result into a counter register. When the counter reaches a compare value or overflows, it can trigger actions like toggling an output pin or firing an interrupt.
 
-```text
-               ATmega328P Timer Block
-  +--------+   +-----------+   +---------+
-  | F_CPU  |-->| Prescaler |-->| Counter |
-  | 16 MHz |   | /1,8,64,  |   | TCNTn   |
-  +--------+   | 256,1024  |   +----+----+
-               +-----------+        |
-                                    v
-                              +-----------+
-                              | Compare   |
-                              | OCRnA/B   |
-                              +-----+-----+
-                                    |
-                          +---------+---------+
-                          |                   |
-                     (match?)            (overflow?)
-                          |                   |
-                    +-----+-----+    +--------+------+
-                    | Toggle pin|    | Overflow      |
-                    | or IRQ    |    | interrupt/flag|
-                    +-----------+    +---------------+
+```mermaid
+flowchart TD
+    A["F_CPU\n16 MHz"] --> B["Prescaler\n/1, 8, 64, 256, 1024"]
+    B --> C["Counter\nTCNTn"]
+    C --> D["Compare\nOCRnA/B"]
+    D -->|match| E["Toggle pin\nor IRQ"]
+    D -->|overflow| F["Overflow\ninterrupt/flag"]
 ```
 
 Each timer in the ATmega328P is a hardware counter clocked by the system clock (or a prescaled version of it). Timer0 and Timer2 are 8-bit (count 0 to 255), while Timer1 is 16-bit (count 0 to 65535). The timer increments on each clock tick and can trigger actions when it reaches specific values.
@@ -266,7 +252,7 @@ Setting COM1A0 in TCCR1A tells the hardware to toggle the OC1A pin every time TC
 <InArticleAd />
 
 
-While this lesson focuses on CTC mode for frequency generation, PWM mode is equally important. In Fast PWM, the timer counts from 0 to a top value and the output pin goes high at the start of each cycle, then low when the counter matches OCRnA.
+CTC mode generates precise frequencies, but timers can also produce variable-width pulses. Fast PWM mode uses the same counter and compare registers, but instead of toggling the pin at each match, it controls how long the pin stays high within each cycle. You will use this extensively in later lessons for motor control and LED dimming.
 
 ```text
   Fast PWM waveform:
