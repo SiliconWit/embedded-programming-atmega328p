@@ -10,6 +10,7 @@ heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p
 
 import TawkWidget from '../../../../components/TawkWidget.astro';
 import UniversalContentContributors from '../../../../components/UniversalContentContributors.astro';
+import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 import InArticleAd from '../../../../components/InArticleAd.astro';
 import Copyright from '../../../../components/Copyright.astro';
 import BionicText from '../../../../components/BionicText.astro';
@@ -26,6 +27,8 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
 Timers are the workhorses of embedded systems. They count clock cycles in hardware, freeing the CPU to do other work while generating precise time intervals, PWM signals, and frequency outputs. The ATmega328P has three timers, and in this lesson you will configure all of them. The project is a tone generator: two buttons step the frequency up and down, and a piezo buzzer plays the tone using Timer1 in CTC mode with hardware output compare. You will hear exactly how prescalers and compare values translate into audible frequencies. #Timers #CTC #PWM
+
+<PodcastEmbed src="https://open.spotify.com/episode/2lQEZPMY8cpp8XPVwukUL0?si=heWxjaGaSjaHnCwWzdW3ig" />
 
 ## What We Are Building
 
@@ -252,7 +255,7 @@ Setting COM1A0 in TCCR1A tells the hardware to toggle the OC1A pin every time TC
 <InArticleAd />
 
 
-CTC mode generates precise frequencies, but timers can also produce variable-width pulses. Fast PWM mode uses the same counter and compare registers, but instead of toggling the pin at each match, it controls how long the pin stays high within each cycle. You will use this extensively in later lessons for motor control and LED dimming.
+CTC mode generates precise frequencies, but timers can also produce variable-width pulses. PWM (Pulse Width Modulation) is a technique where you rapidly switch a digital pin on and off at a fixed frequency, varying the fraction of time it stays on (the "duty cycle") to control the average power delivered to a load. Fast PWM mode uses the same counter and compare registers, but instead of toggling the pin at each match, it controls how long the pin stays high within each cycle. You will use this extensively in later lessons for motor control and LED dimming.
 
 ```text
   Fast PWM waveform:
