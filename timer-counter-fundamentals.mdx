@@ -1,7 +1,7 @@
 ---
 title: "Timer/Counter Fundamentals"
 description: "Explore ATmega328P Timer0, Timer1, and Timer2 in Normal, CTC, and PWM modes. Build a tunable tone generator that produces precise audio frequencies using timer compare match interrupts and a piezo buzzer."
-contributors: "sam-macharia,lawrence-langat"
+contributors: "sam-macharia,lawrence-langat,joseph-disamalu"
 pubDate: 2026-01-29
 tags: ["timers", "counters", "pwm", "ctc", "prescaler", "atmega328p", "avr"]
 excerpt: "Explore ATmega328P Timer0, Timer1, and Timer2 in Normal, CTC, and PWM modes. Build a tunable tone generator that produces precise audio frequencies using timer compare match interrupts and a piezo buzzer."
@@ -10,7 +10,6 @@ heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p
 
 import TawkWidget from '../../../../components/TawkWidget.astro';
 import UniversalContentContributors from '../../../../components/UniversalContentContributors.astro';
-import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 import InArticleAd from '../../../../components/InArticleAd.astro';
 import Copyright from '../../../../components/Copyright.astro';
 import BionicText from '../../../../components/BionicText.astro';
@@ -23,6 +22,8 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 />
 
 
+
+import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
@@ -57,6 +58,8 @@ A piezo buzzer driven by Timer1 in CTC mode with hardware toggle on the OC1A pin
 | 3 | Piezo buzzer (passive) | 1 | Must be passive, not active |
 | 4 | Push buttons (tactile) | 2 | Reuse 1 from Lesson 2, add 1 new |
 | 5 | Jumper wires | ~8 | Male-to-male |
+
+![Arduino Nano with piezo buzzer and two push buttons on breadboard](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-Buzzer-Buttons.png)
 
 ## Timer Architecture Overview
 

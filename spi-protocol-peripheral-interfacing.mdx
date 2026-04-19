@@ -1,7 +1,7 @@
 ---
 title: "SPI Protocol and Peripheral Interfacing"
 description: "Master the ATmega328P SPI peripheral by writing an SSD1306 OLED driver from scratch. Display a real-time clock on a 128x64 OLED, covering clock polarity, phase, data framing, and display buffer management."
-contributors: "sam-macharia,lawrence-langat"
+contributors: "sam-macharia,lawrence-langat,joseph-disamalu"
 pubDate: 2026-02-19
 tags: ["spi", "oled", "ssd1306", "protocol", "peripheral", "atmega328p", "avr"]
 excerpt: "Master the ATmega328P SPI peripheral by writing an SSD1306 OLED driver from scratch. Display a real-time clock on a 128x64 OLED, covering clock polarity, phase, data framing, and display buffer management."
@@ -25,7 +25,11 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
+import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
+
 SPI is the fastest standard serial bus on most microcontrollers, and it is the interface of choice for displays, SD cards, and high-speed sensors. In this lesson you will configure the ATmega328P hardware SPI peripheral, understand clock polarity and phase, and write a complete driver for the SSD1306 OLED display. The project is a real-time clock that counts hours, minutes, and seconds on a 128x64 pixel screen, rendered with a custom bitmap font. Every byte that reaches the display passes through code you wrote yourself. #SPI #OLED #SSD1306
+
+<PodcastEmbed src="https://open.spotify.com/episode/6bS0wM6Tf40uoIb5TgSMmc?si=obsjiz6nQR27C_JsKNKfKQ" />
 
 ## What We Are Building
 
@@ -144,6 +148,8 @@ The 7-pin SPI OLED module has the following connections:
 | RES | Reset | D8 | PB0 |
 | DC | Data/Command | D9 | PB1 |
 | CS | Chip Select | D10 | PB2 (SS) |
+
+![Arduino Nano wired to SSD1306 OLED over SPI for real-time clock display](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-OLED-SPI.png)
 
 ## SSD1306 Driver
 

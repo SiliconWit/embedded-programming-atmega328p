@@ -1,7 +1,7 @@
 ---
 title: "I2C Bus and Sensor Integration"
 description: "Implement the I2C (TWI) protocol on ATmega328P from register level. Build a mini weather station that reads temperature, humidity, and pressure from a BME280 sensor and displays the data on an OLED screen."
-contributors: "sam-macharia,lawrence-langat"
+contributors: "sam-macharia,lawrence-langat,joseph-disamalu"
 pubDate: 2026-02-26
 tags: ["i2c", "twi", "bme280", "sensor", "weather-station", "atmega328p", "avr"]
 excerpt: "Implement the I2C (TWI) protocol on ATmega328P from register level. Build a mini weather station that reads temperature, humidity, and pressure from a BME280 sensor and displays the data on an OLED screen."
@@ -25,7 +25,11 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
+import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
+
 I2C (also called TWI on Atmel chips) lets you connect dozens of sensors and peripherals with just two wires. In this lesson you will implement the ATmega328P TWI interface from scratch, handling start conditions, addressing, ACK/NACK responses, and multi-byte reads. The project is a mini weather station: a BME280 sensor provides temperature, humidity, and barometric pressure readings, and the firmware displays all three values on the SSD1306 OLED from the previous lesson. Two different peripherals sharing two wires, all driven by code you wrote. #I2C #BME280 #WeatherStation
+
+<PodcastEmbed src="https://open.spotify.com/episode/1l9gE9exN5QaC1iFpJlOKA?si=tE4Fy1FoTW-QymoQYSZryw" />
 
 ## What We Are Building
 
@@ -54,6 +58,8 @@ A BME280 environmental sensor connected over I2C provides temperature (0.01 C re
 | 3 | BME280 breakout module | 1 | I2C variant with pull-ups on board |
 | 4 | SSD1306 OLED 128x64 (SPI) | 1 | From Lesson 6 |
 | 5 | Jumper wires | ~4 | For I2C connections |
+
+![Arduino Nano with BME280 sensor over I2C and SSD1306 OLED over SPI for mini weather station](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-BME280-OLED-I2C.png)
 
 ## I2C Protocol Fundamentals
 

@@ -1,7 +1,7 @@
 ---
 title: "Interrupts and Event-Driven Design"
 description: "Learn ATmega328P external interrupts (INT0/INT1), pin-change interrupts, and timer interrupts. Build a reaction time tester that measures your response in milliseconds using ISR-driven timing."
-contributors: "sam-macharia,lawrence-langat"
+contributors: "sam-macharia,lawrence-langat,joseph-disamalu"
 pubDate: 2026-02-05
 tags: ["interrupts", "isr", "event-driven", "atmega328p", "avr", "pin-change"]
 excerpt: "Learn ATmega328P external interrupts (INT0/INT1), pin-change interrupts, and timer interrupts. Build a reaction time tester that measures your response in milliseconds using ISR-driven timing."
@@ -10,7 +10,6 @@ heroImage: "https://cdn.siliconwit.com/education/embedded-programming-atmega328p
 
 import TawkWidget from '../../../../components/TawkWidget.astro';
 import UniversalContentContributors from '../../../../components/UniversalContentContributors.astro';
-import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 import InArticleAd from '../../../../components/InArticleAd.astro';
 import Copyright from '../../../../components/Copyright.astro';
 import BionicText from '../../../../components/BionicText.astro';
@@ -23,6 +22,8 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 />
 
 
+
+import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
@@ -60,6 +61,8 @@ The firmware waits a random interval (1 to 5 seconds), lights an LED, and starts
 :::note
 This lesson reuses parts from previous lessons. The LED is the onboard Nano LED on PB5, and UART goes through the Nano's USB connection.
 :::
+
+![Arduino Nano with push button on PD2 for external interrupt reaction timer](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-LED-Button-Interrupt.png)
 
 ## Interrupt Fundamentals
 

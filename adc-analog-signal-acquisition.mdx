@@ -1,7 +1,7 @@
 ---
 title: "ADC and Analog Signal Acquisition"
 description: "Master the ATmega328P 10-bit ADC with register-level configuration. Build a light-tracking indicator using photoresistors that displays a real-time bar graph on an OLED, covering reference voltages, free-running mode, and noise reduction."
-contributors: "sam-macharia,lawrence-langat"
+contributors: "sam-macharia,lawrence-langat,joseph-disamalu"
 pubDate: 2026-03-05
 tags: ["adc", "analog", "signal-acquisition", "photoresistor", "atmega328p", "avr"]
 excerpt: "Master the ATmega328P 10-bit ADC with register-level configuration. Build a light-tracking indicator using photoresistors that displays a real-time bar graph on an OLED, covering reference voltages, free-running mode, and noise reduction."
@@ -25,7 +25,11 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
+import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
+
 The real world is analog: light intensity, temperature, force, and sound are all continuous signals. The ADC (Analog-to-Digital Converter) on the ATmega328P samples these signals and converts them into 10-bit digital values your firmware can process. In this lesson you will configure the ADC registers directly, explore reference voltage options, compare single-conversion and free-running modes, and implement oversampling for noise reduction. The project uses two photoresistors (LDRs) to detect which direction is brighter, displaying a live bar graph on the OLED that shows the relative light level from each sensor. #ADC #AnalogSignals #Photoresistor
+
+<PodcastEmbed src="https://open.spotify.com/episode/5OOEfrH7pHnQvni3ZC3x1y?si=POVCHwhvQfaXXTEhkMShbA" />
 
 ## What We Are Building
 
@@ -246,6 +250,8 @@ The LDR connects from the ADC pin to VCC, and the 10K resistor connects from the
 |--------|------------|----------------|------------|
 | LDR Left | A0 | PC0 (ADC0) | LDR to VCC, 10K to GND |
 | LDR Right | A1 | PC1 (ADC1) | LDR to VCC, 10K to GND |
+
+![Arduino Nano with two LDRs and SSD1306 OLED for ADC light-tracking indicator](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-LDR-OLED-ADC.png)
 
 ### ADC Value to Voltage Conversion
 
