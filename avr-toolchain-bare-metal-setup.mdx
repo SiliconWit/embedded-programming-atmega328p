@@ -115,19 +115,29 @@ avrdude -?
 ```
 </TabItem>
 <TabItem label="Windows">
-Download and install [WinAVR](http://winavr.sourceforge.net/) or use MSYS2:
+The recommended path on Windows is [MSYS2](https://www.msys2.org), which gives you a maintained avr-gcc and avrdude with a real installer rather than a portable build you have to wire up by hand.
 
-```bash
-# MSYS2 approach
-pacman -S mingw-w64-x86_64-avr-gcc mingw-w64-x86_64-avr-libc mingw-w64-x86_64-avrdude
-```
+1. Install MSYS2 from https://www.msys2.org and open the **MSYS2 MINGW64** shell from the Start menu.
+2. Update the package database (run twice if it asks you to close and reopen the shell):
 
-Make sure `avr-gcc` and `avrdude` are on your PATH. Open a new terminal and verify:
+   ```bash
+   pacman -Syu
+   ```
+3. Install the AVR toolchain:
+
+   ```bash
+   pacman -S mingw-w64-x86_64-avr-gcc mingw-w64-x86_64-avr-libc mingw-w64-x86_64-avrdude make
+   ```
+4. Add `C:\msys64\mingw64\bin` to your system `PATH` so `avr-gcc`, `avrdude`, and `make` work from any terminal (PowerShell, cmd, VS Code).
+
+Open a new terminal and verify:
 
 ```bash
 avr-gcc --version
 avrdude -?
 ```
+
+Older guides point to WinAVR. That project was last released in 2010, ships only as a portable build that is awkward to put on PATH, and is no longer maintained. Avoid it unless you have a specific reason to use it.
 </TabItem>
 </Tabs>
 
@@ -224,6 +234,26 @@ clean:
 
 .PHONY: all flash fuses clean
 ```
+
+:::tip[Download the working files instead of copy-pasting]
+Makefiles require **literal tab characters** at the start of each recipe line, and the file must be named exactly `Makefile` with **no extension**. Both rules are easy to break: copy-pasting from the rendered code block above can convert tabs to spaces (giving `Makefile:15: *** missing separator. Stop.`), and Notepad on Windows silently saves as `Makefile.txt` (giving `No targets specified and no makefile found`).
+
+Download the verified files directly:
+
+- [Makefile](https://raw.githubusercontent.com/SiliconWit/embedded-programming-atmega328p/main/code/avr-toolchain-bare-metal-setup/Makefile)
+- [main.c](https://raw.githubusercontent.com/SiliconWit/embedded-programming-atmega328p/main/code/avr-toolchain-bare-metal-setup/main.c)
+
+Or grab both in one go:
+
+```bash
+curl -O https://raw.githubusercontent.com/SiliconWit/embedded-programming-atmega328p/main/code/avr-toolchain-bare-metal-setup/Makefile
+curl -O https://raw.githubusercontent.com/SiliconWit/embedded-programming-atmega328p/main/code/avr-toolchain-bare-metal-setup/main.c
+```
+
+You can browse the folder at [github.com/SiliconWit/embedded-programming-atmega328p/tree/main/code/avr-toolchain-bare-metal-setup](https://github.com/SiliconWit/embedded-programming-atmega328p/tree/main/code/avr-toolchain-bare-metal-setup).
+
+If you do hand-type the Makefile, verify the indentation with `cat -A Makefile`. Every recipe line should start with `^I` (a tab), not spaces.
+:::
 
 The USB connection between your computer and the Arduino Nano looks like this electrically. The CH340 or FTDI chip on the Nano translates USB to TTL serial, which connects to the ATmega328P UART pins used by the bootloader during flashing.
 
