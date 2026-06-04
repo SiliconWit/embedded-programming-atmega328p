@@ -581,6 +581,10 @@ Each peripheral handles one concern:
 - **EEPROM** stores calibration data that survives power cycles. The `eeprom_update_float` function only writes if the value changed, preserving write cycles.
 - **GPIO** sets direction before each move and generates the step pulse (high then low) inside the ISR.
 
+:::tip[Instrument it]
+A stepper's weakness is that it fails silently: overload it and it skips steps, and the open-loop controller never knows, so the job finishes in the wrong place. Add a magnetic encoder (AS5600) or an optical encoder on the shaft to compare commanded steps against real position, and missed steps become visible the instant they happen. An [ESP32 or STM32](/education/sensor-actuator-interfacing-stm32/) reads it, closes the loop, and can [stop the job](https://siliconwit.io) rather than ruin the part, turning open-loop control into closed-loop confidence.
+:::
+
 ## Testing the Controller
 
 <InArticleAd />

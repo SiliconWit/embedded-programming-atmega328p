@@ -290,6 +290,10 @@ OCR0A = 127;            /* 50% duty cycle */
 DDRD |= (1 << PD6);    /* OC0A output */
 ```
 
+:::tip[Instrument it]
+Run a timer the other way, as a counter or input-capture instead of a tone source, and it becomes a measuring instrument. Feed it pulses from a Hall sensor watching a magnet on a shaft, or from an IR sensor and a slotted disc, and it counts revolutions: a tachometer. The same trick on a flow meter's pulse output reads litres per minute. An [ATmega](/education/sensor-actuator-interfacing-stm32/) measures it, and an [ESP32 or STM32 link](/education/iot-systems/) can [log RPM or flow](https://siliconwit.io) to catch a belt slipping or a pump losing prime.
+:::
+
 ## Exercises
 
 <InArticleAd />

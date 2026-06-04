@@ -402,6 +402,10 @@ static uint16_t adc_read_quiet(uint8_t channel)
 }
 ```
 
+:::tip[Instrument it]
+The ADC is your bridge to the analog machine. The same code that reads an LDR reads the sensors that report a motor's health: an NTC thermistor on the winding for temperature, an ACS712 or a shunt-plus-amplifier on the supply for current, and a vibration sensor for mechanical trouble. Watching current and temperature together is the cheapest motor monitor there is, since a rising pair means a bearing dragging or a fan failing. An [ATmega](/education/sensor-actuator-interfacing-stm32/) reads them, and through an [ESP32 or STM32 link](/education/iot-systems/) can [alert before the motor burns out](https://siliconwit.io).
+:::
+
 ## Exercises
 
 <InArticleAd />

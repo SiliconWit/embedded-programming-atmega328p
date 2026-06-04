@@ -489,6 +489,10 @@ I2C problems are common and can be frustrating. Here are the most frequent issue
 3. Log all three readings over UART (from Lesson 5) in CSV format alongside the OLED display, so you can capture data on a PC.
 4. Add a second I2C device (for example a BH1750 light sensor at address 0x23) and display its readings on the fourth line of the OLED.
 
+:::tip[Instrument it]
+A BME280 is more than a demo: the same three readings catch real problems where equipment lives. Put one inside an electronics enclosure or a server cabinet and rising temperature with rising humidity warns of a failing fan or condensation before it shorts a board; in a cold-chain box or a greenhouse it proves the conditions your goods or crop actually saw. Mount it in moving air, not against a warm wall, and the [ATmega](/education/sensor-actuator-interfacing-stm32/) can log it locally or [hand it to an ESP32](/education/iot-systems/), which can then [stream and alert](https://siliconwit.io) when a limit is crossed.
+:::
+
 ## Summary
 
 <InArticleAd />
