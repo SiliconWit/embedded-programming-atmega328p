@@ -25,12 +25,20 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
-Real firmware rarely uses just one peripheral. CNC machines, 3D printers, and laboratory positioning stages combine timers, interrupts, serial communication, analog input, and non-volatile storage into a single program that must respond to multiple events without missing a step pulse. This lesson builds a single-axis stepper motor controller that accepts movement commands over UART, generates precisely timed step pulses, homes against a limit switch, and lets you jog the axis with a potentiometer. Every peripheral from the course appears in one working system. #StepperMotor #CNC #MotionControl
+A CNC machine (a machine tool moved by a computer) that misses one step pulse cuts in the wrong place for the rest of the job. The program inside must listen for commands, time every pulse and watch a safety switch, all on one small processor, and no pulse may be late. This lesson builds a controller for one axis of such a machine. It takes movement commands over the serial port, times the step pulses with a timer, finds its zero position with a limit switch, and lets you move the axis by hand with a potentiometer. It uses the peripherals of the whole course in one program. #StepperMotor #CNC #MotionControl
 
 ## What We Are Building
 
 <Card title="Single-Axis Stepper Motor Controller" icon="star">
-A CNC-style motion controller for one linear axis. The ATmega328P receives G-code movement commands over UART from a PC, generates precisely timed step pulses using Timer1 in CTC mode, and drives a NEMA 17 stepper motor through an A4988 driver module. A normally-open limit switch on INT0 provides a home reference position. A 10K potentiometer on ADC channel 0 allows manual jog control. Steps-per-millimeter calibration is stored in EEPROM so it survives power cycles. The controller handles rapid moves, feedrate moves, homing, position reporting, and jog mode.
+A motion controller for one linear axis:
+
+- A PC sends movement commands over UART in G-code, the text language of CNC machines.
+- Timer1 in CTC mode times the step pulses.
+- An A4988 driver module turns the pulses into current for a NEMA 17 stepper motor.
+- A limit switch on INT0 marks home, the zero from which positions are counted.
+- A 10K potentiometer on ADC channel 0 moves the axis by hand (jogging).
+- EEPROM keeps the calibration, the number of steps for one millimeter.
+
 </Card>
 
 **Project specifications:**
@@ -43,7 +51,7 @@ A CNC-style motion controller for one linear axis. The ATmega328P receives G-cod
 | Motor supply | 12V external |
 | Serial | 115200 baud (U2X mode for low error) |
 | Default calibration | 25 steps/mm (8 mm pitch leadscrew) |
-| Speed range | 1 to 3000+ mm/min |
+| Speed range | 10 to 3000+ mm/min |
 | Commands | G0, G1, G28, M114, M500, M501, J1 |
 
 ## Peripherals Used
@@ -51,40 +59,49 @@ A CNC-style motion controller for one linear axis. The ATmega328P receives G-cod
 <InArticleAd />
 
 
-This project ties together every major peripheral from Lessons 1 through 9:
+No peripheral here is new. Each has one job:
 
-| Peripheral | Lesson | Role in This Project |
+| Peripheral | Where you met it | Role in This Project |
 |-----------|--------|---------------------|
-| GPIO | 2 | STEP and DIR pins to A4988 driver |
-| Timer1 (CTC) | 3 | Precise step pulse timing at variable frequency |
-| INT0 | 4 | Limit switch interrupt for homing |
-| UART | 5 | Receive G-code commands from PC |
-| ADC | 8 | Read jog potentiometer for manual control |
-| EEPROM | 9 | Store and recall steps-per-mm calibration |
+| GPIO | [GPIO registers](/education/embedded-programming-atmega328p/gpio-registers-digital-io/) | STEP and DIR pins to A4988 driver |
+| Timer1 (CTC) | [Timers](/education/embedded-programming-atmega328p/timer-counter-fundamentals/) | Step pulse timing at a frequency that changes with speed |
+| INT0 | [Interrupts](/education/embedded-programming-atmega328p/interrupts-event-driven-design/) | Limit switch interrupt for homing |
+| UART | [Serial communication](/education/embedded-programming-atmega328p/uart-serial-communication/) | Receive G-code commands from PC |
+| ADC | [Analog inputs](/education/embedded-programming-atmega328p/adc-analog-signal-acquisition/) | Read jog potentiometer for manual control |
+| EEPROM | [Power management](/education/embedded-programming-atmega328p/power-management-watchdog-sleep/) | Store and recall steps-per-mm calibration |
 
 ## Hardware Setup
 
 <InArticleAd />
 
 
-The stepper driver module (A4988 or DRV8825) simplifies wiring. It takes two logic signals from the ATmega328P (STEP and DIR) and handles the motor coil sequencing and current regulation internally.
+A stepper motor does not spin freely like a fan motor. It turns in small fixed steps, 200 to a full turn here, and holds its position between steps. Count the steps you send and you know the position, with no sensor on the shaft.
+
+An MCU pin cannot drive the motor coils: a pin is good for 20 mA, and a coil needs 1 A or more from a 12 V supply. The driver module (A4988 or DRV8825) stands between the two. It needs only two logic signals. Each rising edge on STEP moves the motor one step, and the level on DIR chooses the direction.
 
 ```text
-  ATmega328P             A4988 Driver          NEMA 17
-  +--------+           +----------+           +-------+
-  |    PD4 |--[STEP]-->| STEP     |     1A -->| Coil  |
-  |    PD5 |--[DIR]--->| DIR      |     1B -->|   A   |
-  |        |           |          |     2A -->| Coil  |
-  |    PD2 |<--[INT0]--| (limit)  |     2B -->|   B   |
-  |    PC0 |<--[ADC0]--| (pot)    |           +-------+
-  |        |           | VMOT     |<-- 12V
-  |    GND |---------->| GND      |
-  +--------+           +----------+
-                        MS1,MS2,MS3 = GND (full step)
-
-  Limit switch: NO between PD2 and GND (internal pull-up)
-  Jog pot: 10K between VCC and GND, wiper to PC0
+  ATmega328P            A4988 Driver         NEMA 17
+  ┌────────┐           ┌───────────┐        ┌───────┐
+  │    PD4 ├── STEP ──►│ STEP   1A ├────────┤ Coil  │
+  │    PD5 ├── DIR ───►│ DIR    1B ├────────┤   A   │
+  │    GND ├───────────┤ GND    2A ├────────┤ Coil  │
+  │        │   12V ───►│ VMOT   2B ├────────┤   B   │
+  │        │           └───────────┘        └───────┘
+  │        │            MS1,MS2,MS3 = GND (full step)
+  │        │
+  │    PD2 │◄── INT0 ── limit switch (NO) ── GND
+  │    PC0 │◄── ADC0 ── wiper of 10K jog pot
+  └────────┘
 ```
+
+- The limit switch is normally open (NO), between PD2 and GND, with the internal pull-up on. The pin reads high until the axis presses the switch.
+- The jog potentiometer has its outer pins on VCC and GND and its wiper, the middle pin, on PC0.
+- On the A4988, connect VDD to 5V and RST to SLP, and put a 100 uF capacitor across VMOT and GND.
+- MS1, MS2 and MS3 select microstepping, which divides each step into smaller ones. On GND they give full steps.
+
+:::caution
+Never connect or disconnect the motor while the 12 V supply is on. It can destroy the driver.
+:::
 
 ### Parts List
 
@@ -101,32 +118,36 @@ The stepper driver module (A4988 or DRV8825) simplifies wiring. It takes two log
 <InArticleAd />
 
 
-A stepper motor moves one step for each rising edge on the STEP pin. The step rate determines the motor speed. Timer1 in CTC mode generates these pulses at a precise frequency.
+The number of pulses sets the distance, and the number of pulses per second sets the speed. So the program must turn millimeters into pulses, and millimeters per minute into a timer setting.
 
-For a motor with 200 steps per revolution driving a leadscrew with 8 mm pitch (common on 3D printers), one revolution moves 8 mm. That gives 200/8 = 25 steps per mm.
+The motor turns a leadscrew, a threaded rod that moves the axis as it turns. Its pitch is the distance the axis moves in one turn. With 200 steps per turn and a pitch of 8 mm (common on 3D printers), one millimeter needs $200 / 8 = 25$ steps.
 
-To move at a feedrate of F mm/min:
+CNC machines give speed as a feedrate F in mm per minute. Divide by 60 for mm per second, then multiply by the steps in one millimeter:
 
 ```
 steps_per_second = (F / 60) * steps_per_mm
 ```
 
-For F = 300 mm/min with 25 steps/mm: steps_per_second = 5 * 25 = 125 Hz. Timer1 at 16 MHz with prescaler 64 gives:
+For $F = 300$ mm/min with 25 steps/mm: $(300 / 60) \times 25 = 125$ steps per second.
+
+Timer1 counts from 0 up to the value in OCR1A, raises an interrupt (a compare match), and starts again from 0. The interrupt routine (ISR) sends one STEP pulse each time, so the interrupt frequency is the step rate. With a 16 MHz clock and prescaler 64 the timer makes 250,000 counts per second, and:
 
 ```
-OCR1A = (F_CPU / (2 * prescaler * steps_per_second)) - 1
+OCR1A = (F_CPU / (prescaler * steps_per_second)) - 1
 ```
 
-For 125 Hz: OCR1A = (16000000 / (2 * 64 * 125)) - 1 = 999. The ISR toggles the STEP pin on each compare match.
+For 125 steps per second: $\text{OCR1A} = 16\,000\,000 / (64 \times 125) - 1 = 1999$. The minus 1 is there because the count starts at 0. There is no factor of 2 as in the tone generator, because the ISR does not toggle the pin: each compare match is one full step.
 
-At higher speeds (e.g., 3000 mm/min = 1250 Hz), OCR1A = 99. Timer1's 16-bit range handles speeds from below 1 step/s up to tens of thousands of steps/s.
+At 3000 mm/min the rate is 1250 steps per second and OCR1A = 199. With prescaler 64, the 16-bit range of Timer1 covers speeds from about 4 steps/s ($250\,000 / 65\,536 \approx 3.8$) up to tens of thousands of steps/s.
+
+The controller never measures where the axis is. It counts the pulses it has sent, which is called open-loop control. If the motor misses steps under a heavy load, the count is wrong and the controller does not know.
 
 ## G-code Parser
 
 <InArticleAd />
 
 
-Full CNC G-code is complex, but a single-axis controller needs only a handful of commands:
+A G-code command is one line of text. In `G1 X50 F300`, G1 means "move in a straight line", X50 is the target position in mm, and F300 is the feedrate in mm/min. A controller for one axis needs only these commands:
 
 | Command | Meaning | Example |
 |---------|---------|---------|
@@ -137,12 +158,14 @@ Full CNC G-code is complex, but a single-axis controller needs only a handful of
 | M500 | Save steps/mm to EEPROM | `M500` |
 | M501 | Load steps/mm from EEPROM | `M501` |
 
-The parser reads one line at a time from the UART ring buffer, extracts the command letter and numeric values, and calls the appropriate motion function.
+The parser, the part of the program that reads a command, takes one line from the UART, finds the command letter and the values, and calls the function for that command. Positions are absolute: X50 means "go to 50 mm from home", not "move 50 mm further".
 
 ## Complete Firmware
 
 <InArticleAd />
 
+
+The program is long, but it is made of blocks you already know. Read the Timer1 ISR first. All motion happens there, one step for each interrupt, while the rest of the program only sets a target and waits.
 
 ```c
 #define F_CPU 16000000UL
@@ -153,6 +176,7 @@ The parser reads one line at a time from the UART ring buffer, extracts the comm
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 #include <util/atomic.h>
+#include <util/delay.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -253,9 +277,10 @@ static uint16_t adc_read(void)
    ================================ */
 static void timer1_start(float steps_sec)
 {
-    if (steps_sec < 1.0) steps_sec = 1.0;
+    if (steps_sec < 4.0) steps_sec = 4.0;  /* Slowest rate that fits in 16 bits */
 
-    uint16_t ocr = (uint16_t)(F_CPU / (2UL * 64 * (uint32_t)steps_sec) - 1);
+    /* One step per compare match: OCR1A = F_CPU / (64 * rate) - 1 */
+    uint16_t ocr = (uint16_t)(F_CPU / (64UL * (uint32_t)steps_sec) - 1);
     if (ocr < 1) ocr = 1;
 
     TCCR1A = 0;
@@ -277,7 +302,8 @@ static void timer1_stop(void)
 ISR(TIMER1_COMPA_vect)
 {
     if (homing) {
-        if (limit_hit) {
+        /* Edge seen, or switch already closed when homing began */
+        if (limit_hit || !(PIND & (1 << LIMIT_PIN))) {
             timer1_stop();
             current_pos = 0;
             target_pos = 0;
@@ -286,6 +312,7 @@ ISR(TIMER1_COMPA_vect)
         }
         /* Step toward home (negative direction) */
         PORTD |= (1 << STEP_PIN);
+        _delay_us(2);  /* A4988 needs 1 us high, DRV8825 1.9 us */
         PORTD &= ~(1 << STEP_PIN);
         current_pos--;
         return;
@@ -298,6 +325,7 @@ ISR(TIMER1_COMPA_vect)
 
     /* Pulse the STEP pin */
     PORTD |= (1 << STEP_PIN);
+    _delay_us(2);  /* A4988 needs 1 us high, DRV8825 1.9 us */
     PORTD &= ~(1 << STEP_PIN);
 
     if (current_pos < target_pos) current_pos++;
@@ -328,16 +356,19 @@ static void move_to(float pos_mm, float rate_mm_min)
     if (diff == 0) return;
 
     /* Set direction */
-    if (diff > 0) PORTD |= (1 << DIR_PIN);
-    else { PORTD &= ~(1 << DIR_PIN); diff = -diff; }
+    uint8_t toward_home = (diff < 0);
+    if (toward_home) PORTD &= ~(1 << DIR_PIN);
+    else PORTD |= (1 << DIR_PIN);
+
+    limit_hit = 0;  /* Forget the edge left over from homing */
 
     float steps_sec = (rate_mm_min / 60.0) * steps_per_mm;
     timer1_start(steps_sec);
 
     /* Wait for move to complete */
     while (moving) {
-        /* Check for limit switch during move */
-        if (limit_hit && !homing) {
+        /* Stop if the limit switch closes while moving toward home */
+        if (limit_hit && toward_home) {
             timer1_stop();
             uart_puts("!! Limit hit during move\n");
             break;
@@ -358,7 +389,7 @@ static void do_home(void)
     float steps_sec = (home_speed / 60.0) * steps_per_mm;
     timer1_start(steps_sec);
 
-    while (homing);  /* Wait for limit switch or timeout */
+    while (homing);  /* Wait for the limit switch */
 
     uart_puts("Home found. Position reset to 0.\n");
 }
@@ -387,17 +418,18 @@ static void jog_check(void)
 
     /* Single step at computed rate */
     float steps_sec = (speed / 60.0) * steps_per_mm;
-    uint16_t delay_us = (uint16_t)(1000000.0 / steps_sec);
+    uint32_t delay_us = (uint32_t)(1000000.0 / steps_sec);
     if (delay_us < 100) delay_us = 100;
 
     PORTD |= (1 << STEP_PIN);
+    _delay_us(2);
     PORTD &= ~(1 << STEP_PIN);
 
     if (PORTD & (1 << DIR_PIN)) current_pos++;
     else current_pos--;
 
     /* Simple delay for step rate */
-    for (uint16_t i = 0; i < delay_us / 10; i++) {
+    for (uint32_t i = 0; i < delay_us / 10; i++) {
         _delay_us(10);
     }
 }
@@ -572,14 +604,14 @@ flowchart TD
     B -->|J1| M["ADC reads pot,\nsteps at mapped speed"]
 ```
 
-Each peripheral handles one concern:
+Work that must happen on time is done by hardware and interrupts, and work that can wait is done in the main loop:
 
-- **Timer1** owns the step timing. The ISR is short (toggle pin, update counter, check target) so it never misses a pulse.
-- **INT0** provides instant limit switch response. Even if the main loop is blocked waiting for UART input, the interrupt fires and the ISR sets `limit_hit`.
-- **UART** handles the human interface. The main loop blocks on `uart_readline()`, which is acceptable because Timer1 and INT0 run independently in hardware.
-- **ADC** is polled only during jog mode. No interrupt needed since jog steps are generated in the main loop.
-- **EEPROM** stores calibration data that survives power cycles. The `eeprom_update_float` function only writes if the value changed, preserving write cycles.
-- **GPIO** sets direction before each move and generates the step pulse (high then low) inside the ISR.
+- Timer1 owns the step timing. Its ISR is short (pulse the pin, update the count, check the target), so it finishes long before the next step is due.
+- INT0 answers the limit switch at once. Even while the main loop waits for UART input, the interrupt fires and its ISR sets `limit_hit`.
+- UART talks to the person at the PC. The main loop stops and waits in `uart_readline()`. That is acceptable because Timer1 and INT0 do not depend on the main loop.
+- The ADC is read only in jog mode, by polling. It needs no interrupt, because jog steps are made in the main loop.
+- EEPROM keeps the calibration when power is off. `eeprom_update_float` writes only if the value changed, which saves write cycles.
+- GPIO sets the direction before each move and makes the step pulse (high, then low) inside the ISR.
 
 :::tip[Instrument it]
 A stepper's weakness is that it fails silently: overload it and it skips steps, and the open-loop controller never knows, so the job finishes in the wrong place. Add a magnetic encoder (AS5600) or an optical encoder on the shaft to compare commanded steps against real position, and missed steps become visible the instant they happen. An [ESP32 or STM32](/education/sensor-actuator-interfacing-stm32/) reads it, closes the loop, and can [stop the job](https://siliconwit.io) rather than ruin the part, turning open-loop control into closed-loop confidence.
@@ -603,7 +635,7 @@ Connect via a serial terminal at 115200 baud. Try these commands in order:
    ```
    G1 X20 F300
    ```
-   Move to 20 mm at 300 mm/min. The motor should take 4 seconds (20mm at 5mm/s).
+   Move to 20 mm at 300 mm/min. The move should take 4 seconds: 300 mm/min is 5 mm/s, and $20 / 5 = 4$.
 
 3. **Check position**
    ```
@@ -629,13 +661,13 @@ Connect via a serial terminal at 115200 baud. Try these commands in order:
 <InArticleAd />
 
 
-The default 25 steps/mm assumes a 200-step motor with an 8 mm pitch leadscrew. Your setup may differ. To calibrate:
+The default 25 steps/mm assumes a 200-step motor with an 8 mm pitch leadscrew. If your machine differs, every move is too long or too short by the same ratio. To calibrate:
 
 <Steps>
 1. Home the axis: `G28`
 2. Command a known distance: `G1 X100 F200`
 3. Measure the actual distance traveled with a ruler or calipers
-4. Calculate: `new_steps_mm = 25.0 * (100.0 / actual_mm)`
+4. Calculate: `new_steps_mm = 25.0 * (100.0 / actual_mm)`. If the axis moved only 98.4 mm, it needs more steps for each millimeter: $25.0 \times 100 / 98.4 = 25.4$.
 5. Update in code and reflash, or implement an M92 command to set it at runtime
 6. Save to EEPROM: `M500`
 </Steps>
@@ -655,7 +687,7 @@ The default 25 steps/mm assumes a 200-step motor with an 8 mm pitch leadscrew. Y
 <InArticleAd />
 
 
-This project combined every peripheral from the course into a single working system. Timer1 generates step pulses at exact frequencies, GPIO drives the stepper driver, INT0 catches the limit switch, UART receives commands from a PC, ADC reads the jog potentiometer, and EEPROM stores calibration. The same architecture scales to multi-axis CNC controllers, 3D printer firmware, and laboratory positioning equipment. The key insight is separation of concerns: each peripheral handles one job, interrupts ensure nothing is missed, and the main loop ties everything together through a simple command parser. You now have the foundation to read and understand production firmware like Grbl, which runs on this same ATmega328P chip.
+A stepper axis is moved by counting pulses: their number sets the distance and their rate sets the speed. Timer1 times the pulses, GPIO sends them, INT0 watches the limit switch, UART receives commands, the ADC reads the jog potentiometer, and EEPROM keeps the calibration. Work that must happen on time is done in interrupts. The controller is open-loop: it knows the position only by counting, so it must home first. Grbl, the firmware of many small CNC machines, runs on this same ATmega328P and is built in the same way.
 
 <EmbeddedProgrammingAtmega328pComments />
 

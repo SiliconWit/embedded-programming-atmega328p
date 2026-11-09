@@ -27,14 +27,14 @@ import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedd
 
 import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 
-I2C (also called TWI on Atmel chips) lets you connect dozens of sensors and peripherals with just two wires. In this lesson you will implement the ATmega328P TWI interface from scratch, handling start conditions, addressing, ACK/NACK responses, and multi-byte reads. The project is a mini weather station: a BME280 sensor provides temperature, humidity, and barometric pressure readings, and the firmware displays all three values on the SSD1306 OLED from the previous lesson. Two different peripherals sharing two wires, all driven by code you wrote. #I2C #BME280 #WeatherStation
+Each sensor you add with SPI costs one more pin, and a small chip soon has none left. Then you connect an I2C sensor with two wires, and it answers nothing, because a resistor is missing or the address is wrong by one bit. I2C (Inter-Integrated Circuit, called TWI on Atmel chips) connects many devices to the same two wires, and each of its rules exists to make that sharing safe. This lesson explains those rules and builds a driver for the ATmega328P. The project is a small weather station: a BME280 sensor measures temperature, humidity and air pressure, and the OLED shows them. #I2C #BME280 #WeatherStation
 
 <PodcastEmbed src="https://open.spotify.com/episode/1l9gE9exN5QaC1iFpJlOKA?si=tE4Fy1FoTW-QymoQYSZryw" />
 
 ## What We Are Building
 
 <Card title="Mini Weather Station" icon="star">
-A BME280 environmental sensor connected over I2C provides temperature (0.01 C resolution), relative humidity (0.008% resolution), and barometric pressure (0.18 Pa resolution). The firmware reads all three measurements every 2 seconds, applies the BME280 compensation formulas, and renders the results on the SSD1306 OLED display. The OLED is driven over SPI (from Lesson 6), and the BME280 over I2C, showing both buses working together.
+A BME280 environmental sensor connected over I2C provides temperature (0.01 C resolution), relative humidity (0.008% resolution), and barometric pressure (0.18 Pa resolution). The firmware reads all three measurements every 2 seconds, corrects them with the formulas from the BME280 datasheet, and shows the results on the SSD1306 OLED display. The OLED uses SPI and the BME280 uses I2C, in one program.
 </Card>
 
 **Project specifications:**
@@ -53,66 +53,77 @@ A BME280 environmental sensor connected over I2C provides temperature (0.01 C re
 
 | Ref | Component | Quantity | Notes |
 |-----|-----------|----------|-------|
-| 1 | Arduino Nano or Uno (ATmega328P) | 1 | From previous lessons |
-| 2 | Breadboard | 1 | From previous lessons |
+| 1 | Arduino Nano or Uno (ATmega328P) | 1 | As before |
+| 2 | Breadboard | 1 | As before |
 | 3 | BME280 breakout module | 1 | I2C variant with pull-ups on board |
-| 4 | SSD1306 OLED 128x64 (SPI) | 1 | From Lesson 6 |
+| 4 | SSD1306 OLED 128x64 (SPI) | 1 | The display from the SPI lesson |
 | 5 | Jumper wires | ~4 | For I2C connections |
 
-![Arduino Nano with BME280 sensor over I2C and SSD1306 OLED over SPI for mini weather station](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-BME280-OLED-I2C.png)
+![Wiring drawing: BME280 SDI to Nano A4, SCK to A5, SDO to GND (address 0x76), CS to 5V (selects I2C), plus 5V and GND. The OLED keeps its SPI wires.](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-BME280-OLED-I2C.png)
 
 ## I2C Protocol Fundamentals
 
 <InArticleAd />
 
 
-I2C is a two-wire synchronous protocol. SDA carries data and SCL carries the clock. Both lines are open-drain with external pull-up resistors (typically 4.7K).
+All devices on an I2C bus share two wires: SDA (serial data) carries the bits, and SCL (serial clock) says when to read each bit. With no select wires, I2C must solve two problems: many devices drive the same data wire, and the master must still choose one of them.
+
+The first problem is electrical. If one device pushed SDA high while another pulled it low, a large current would flow between them. So an I2C device can do only two things to a line: pull it low, or let it go. This kind of output is called open-drain. A pull-up resistor from each line to VCC (typically 4.7K) brings the line high when every device lets it go. It is like a bar held up by a spring: anyone can press it down, two hands together do no harm, and the spring lifts it when all let go. Without the pull-up resistors the lines never go high, and the bus does not work.
 
 ```text
-  I2C Bus with two devices:
-
-       VCC           VCC
-        |             |
-      [4.7K]        [4.7K]
-        |             |
-  SDA --+------+------+------+--
-        |      |             |
-  SCL --+--+---+--+----------+--
-           |      |          |
-      +----+--+  ++---------++
-      |ATmega |  | BME280   ||  SSD1306
-      |328P   |  | addr:    ||  addr:
-      |(master)|  | 0x76     ||  0x3C
-      +--------+  +----------++----------+
-
-  Both lines are open-drain:
-  devices can only pull LOW.
-  Pull-ups restore HIGH when released.
+        VCC
+         │
+       [4.7K]
+         │
+  SDA ───┴──────┬───────────────┬───────────────┬───
+                │ PC4           │               │
+         ┌──────┴─────┐  ┌──────┴─────┐  ┌──────┴─────┐
+         │ ATmega328P │  │   BME280   │  │   BH1750   │
+         │  (master)  │  │ addr: 0x76 │  │ addr: 0x23 │
+         └──────┬─────┘  └──────┬─────┘  └──────┬─────┘
+                │ PC5           │               │
+  SCL ───┬──────┴───────────────┴───────────────┴───
+         │
+       [4.7K]
+         │
+        VCC
 ```
 
-The master generates the clock and initiates all communication. A transaction starts with a START condition (SDA falls while SCL is high), followed by a 7-bit address plus a read/write bit, then one or more data bytes, and ends with a STOP condition (SDA rises while SCL is high). For a comparison of I2C with SPI and other bus protocols, see [Digital Electronics: Bus Architecture and Interfaces](/education/digital-electronics/bus-architecture-interfaces/).
+The second problem is choosing a device. Every I2C device has a 7-bit address fixed by its maker: the BME280 is 0x76 or 0x77, depending on one of its pins. The master, which makes the clock and starts every exchange, sends the address first, and only that device answers.
 
 ### I2C Transaction Anatomy
 
-| Step | SDA | SCL | Description |
-|------|-----|-----|-------------|
-| START | High to Low | High | Master signals start |
-| Address (7 bits) + R/W | Data | Clock pulses | Master sends slave address |
-| ACK | Slave pulls low | Clock pulse | Slave acknowledges |
-| Data byte | Data | Clock pulses | 8 bits, MSB first |
-| ACK/NACK | Receiver pulls low (or not) | Clock pulse | Acknowledge each byte |
-| STOP | Low to High | High | Master signals stop |
+One exchange is called a transaction, and two special signals mark its ends. During data bits, SDA changes only while SCL is low. So a change of SDA while SCL is high can mean only START (SDA falls) or STOP (SDA rises).
+
+```text
+  SDA: ----+         +----
+           |         |
+           +---------+
+  SCL: ------+     +------
+             |     |
+             +-----+
+        START           STOP
+      (SDA falls     (SDA rises
+      while SCL      while SCL
+      is HIGH)       is HIGH)
+```
+
+After START, the master sends one byte: the 7-bit address, then one bit for the direction (0 to write, 1 to read). For the BME280 at 0x76 that byte is `(0x76 << 1) | 0 = 0xEC` to write and `0xED` to read. Data bytes follow, 8 bits each, most significant bit first.
+
+The receiver must confirm every byte. The sender lets SDA go for one clock pulse, and the receiver pulls it low: an ACK (acknowledge). If SDA stays high, that is a NACK: no device has that address, or the receiver wants no more bytes.
+
+For a comparison of I2C with SPI and other buses, see [Digital Electronics: Bus Architecture and Interfaces](/education/digital-electronics/bus-architecture-interfaces/).
 
 ## TWI Registers on ATmega328P
 
 <InArticleAd />
 
 
-An I2C write transaction to the BME280 follows this sequence of bus states. Each step produces a status code in TWSR that your driver must check.
+The ATmega328P calls its I2C hardware TWI (Two-Wire Interface). The hardware makes the START, the clock pulses and the STOP, but one step at a time. Your program asks for a step, waits until it is done, and reads a status code that says what happened on the bus. A driver that reads these codes can say exactly where a fault is.
+
+A write to a register of the BME280 has these steps. S is START, P is STOP, and the last row is the status code in the TWSR register after each step.
 
 ```text
-  I2C write transaction (e.g., set register):
-
   Master:  [S] [0x76<<1|W] [reg addr] [value] [P]
              |      |           |         |      |
   Bus:    START  address+W    data      data   STOP
@@ -120,20 +131,24 @@ An I2C write transaction to the BME280 follows this sequence of bus states. Each
   Slave:          [ACK]      [ACK]     [ACK]
              |      |           |         |
   TWSR:    0x08   0x18        0x28      0x28
+```
 
-  I2C read transaction (e.g., read register):
+A read has two parts. The master first writes the number of the register it wants. It then sends a second START with no STOP before it, called a repeated start (Sr), and the address again with the read bit. The master answers the last byte it wants with a NACK, which tells the device to stop sending.
 
+```text
   Master:  [S] [0x76<<1|W] [reg] [Sr] [0x76<<1|R] [NACK] [P]
                                   ^
                              repeated start
   Slave:        [ACK]      [ACK]      [ACK] [data]
 ```
 
-The ATmega328P calls its I2C hardware TWI (Two-Wire Interface). Five registers control it. TWBR sets the bit rate (clock speed). TWCR is the control register where you trigger actions by writing specific bit combinations. TWSR holds status codes that tell you what happened after each operation. TWDR is the data register for send/receive. TWAR sets the slave address (only used in slave mode).
+Five registers control the TWI hardware. You ask for a step by writing a combination of bits to TWCR.
+
+One bit of TWCR surprises everyone: TWINT. The hardware sets it to 1 when a step is done. You clear it by writing a 1 to it, not a 0, and clearing it starts the next step. That is why every function in the driver writes `(1 << TWINT)`, and most then wait until TWINT reads 1 again.
 
 | Register | Purpose |
 |----------|---------|
-| TWBR | Bit Rate Register: SCL frequency = F_CPU / (16 + 2 * TWBR * prescaler) |
+| TWBR | Bit Rate Register: $f_{\text{SCL}} = F_{\text{CPU}} / (16 + 2 \times \text{TWBR} \times \text{prescaler})$ |
 | TWCR | Control: TWINT (interrupt flag), TWEA (enable ACK), TWSTA (start), TWSTO (stop), TWEN (enable) |
 | TWSR | Status: 5-bit status code in upper bits, prescaler in lower 2 bits |
 | TWDR | Data Register: write to send, read after receive |
@@ -141,7 +156,7 @@ The ATmega328P calls its I2C hardware TWI (Two-Wire Interface). Five registers c
 
 ### Setting the I2C Clock Speed
 
-For 100 kHz standard mode with a 16 MHz system clock and prescaler 1:
+Every device on the bus must be able to follow the clock. All I2C devices accept 100 kHz, and most newer ones, the BME280 among them, accept 400 kHz. The hardware divides the system clock to make SCL, and TWBR sets the division. For 100 kHz with a 16 MHz system clock and prescaler 1:
 
 ```
 TWBR = ((F_CPU / SCL_FREQ) - 16) / 2
@@ -152,6 +167,8 @@ TWBR = ((16000000 / 100000) - 16) / 2 = 72
 
 <InArticleAd />
 
+
+The driver has one function for each step of a transaction. Each writes TWCR to ask for the step, then waits for TWINT.
 
 ```c
 #define F_CPU 16000000UL
@@ -206,6 +223,8 @@ static uint8_t twi_read_nack(void)
 
 ### TWI Status Codes
 
+`twi_start()` and `twi_write()` return the status code. SLA+W means the slave address with the write bit, and SLA+R the address with the read bit. Learn 0x20 first: the address was sent and no device answered.
+
 | Code | Meaning |
 |------|---------|
 | 0x08 | START condition transmitted |
@@ -222,7 +241,9 @@ static uint8_t twi_read_nack(void)
 <InArticleAd />
 
 
-The BME280 uses a register-based interface. To read a register, you send a write transaction with the register address, then a repeated start followed by a read transaction. The sensor has a block of calibration data in registers 0x88 through 0xA1 and 0xE1 through 0xF0. Raw measurement data lives in registers 0xF7 through 0xFE (8 bytes for pressure, temperature, and humidity). The compensation algorithm uses integer arithmetic defined in the BME280 datasheet.
+Like most I2C sensors, the BME280 is a set of numbered one-byte registers. The sensor keeps a pointer to one of them. A write sets the pointer, and a read returns the register it points to. After each byte read, the pointer moves to the next register, so one transaction can read several registers in a row: a burst read. The master answers each byte with an ACK, which means "send the next one", and the last byte with a NACK.
+
+Calibration data, written at the factory, is in registers 0x88 through 0xA1 and 0xE1 through 0xF0. The raw results are in 0xF7 through 0xFE: 8 bytes for pressure, temperature and humidity.
 
 ```c
 #define BME280_ADDR 0x76
@@ -267,6 +288,8 @@ static void bme280_read_burst(uint8_t reg, uint8_t *buf, uint8_t len)
 
 <InArticleAd />
 
+
+No two sensor chips are exactly alike, so the maker measures each BME280 and stores 18 correction numbers in it. The raw results mean nothing without them, and the program reads them once at start. Each 16-bit number arrives low byte first, and the code joins the two bytes with a shift. `bme280_init()` then writes three setting registers, which switch on all three measurements.
 
 ```c
 /* Calibration data structure */
@@ -336,7 +359,7 @@ static void bme280_init(void)
 <InArticleAd />
 
 
-The BME280 datasheet provides integer compensation routines that convert raw ADC values into physical units. These use 32-bit arithmetic and a shared variable (t_fine) that links the temperature compensation to pressure and humidity compensation. The formulas are complex but they come directly from Bosch's reference implementation.
+Compensation turns a raw result and the correction numbers into a real unit, such as degrees Celsius. The three functions below come from the BME280 datasheet of Bosch, the maker. Do not try to follow each line: copy them exactly. They use whole numbers only, because this chip has no hardware for decimal arithmetic. The temperature function must run first: it stores a value, `t_fine`, that the other two need, because pressure and humidity readings change with temperature.
 
 ```c
 static int32_t t_fine;
@@ -368,7 +391,7 @@ static uint32_t compensate_press(int32_t adc_P)
     var1 = (((int32_t)cal.dig_P9) * ((int32_t)(((p>>3)*(p>>3))>>13))) >> 12;
     var2 = (((int32_t)(p >> 2)) * ((int32_t)cal.dig_P8)) >> 13;
     return (uint32_t)((int32_t)p + ((var1 + var2 + cal.dig_P7) >> 4));
-    /* Result in Pa with Q24.8 format (divide by 256 for Pa) */
+    /* Result in Pa (the 32-bit routine from the datasheet) */
 }
 
 static uint32_t compensate_humid(int32_t adc_H)
@@ -391,7 +414,7 @@ static uint32_t compensate_humid(int32_t adc_H)
 <InArticleAd />
 
 
-The main loop reads all eight data bytes from the BME280 in a single burst, applies the compensation formulas, formats the results as strings, and renders them on the OLED. The OLED driver from Lesson 6 handles the display update. Temperature is shown in degrees Celsius, humidity as a percentage, and pressure in hectopascals (which equals millibars).
+The main loop reads all eight result bytes in one burst, joins them into three raw numbers, applies the compensation functions, and draws the results with the OLED driver from the SPI lesson. The functions return whole numbers in small units, so the loop divides: hundredths of a degree by 100, pascals by 100 to give hectopascals (hPa, the same as millibars), and humidity by 1024.
 
 ```c
 int main(void)
@@ -412,10 +435,12 @@ int main(void)
 
         /* Compensate (temperature must be first, sets t_fine) */
         int32_t temp_100  = compensate_temp(adc_T);   /* 0.01 C */
-        uint32_t press_256 = compensate_press(adc_P); /* Pa * 256 */
+        uint32_t press_pa = compensate_press(adc_P);  /* Pa */
         uint32_t humid_1024 = compensate_humid(adc_H); /* % * 1024 */
 
-        /* Format and display */
+        /* Format and display. The Lesson 6 font holds only digits and ':'.
+           Add glyphs for the letters, '.' and '%' used below to font_5x7
+           and fb_draw_char(), or those characters stay blank. */
         fb_clear();
         fb_draw_string(0, 0, "BME280 Sensor");
 
@@ -428,7 +453,9 @@ int main(void)
         itoa(temp_whole, buf, 10);
         fb_draw_string(36, 2, buf);
         fb_draw_string(60, 2, ".");
-        utoa(temp_frac, buf, 10);
+        buf[0] = '0' + temp_frac / 10;  /* Two digits, keeps the leading zero */
+        buf[1] = '0' + temp_frac % 10;
+        buf[2] = '\0';
         fb_draw_string(66, 2, buf);
         fb_draw_string(84, 2, "C");
 
@@ -438,7 +465,7 @@ int main(void)
         fb_draw_string(54, 4, "%");
 
         fb_draw_string(0, 6, "hPa:");
-        utoa((uint16_t)(press_256 / 25600), buf, 10);
+        utoa((uint16_t)(press_pa / 100), buf, 10);
         fb_draw_string(30, 6, buf);
 
         oled_flush();
@@ -452,30 +479,13 @@ int main(void)
 <InArticleAd />
 
 
-The I2C START and STOP conditions are defined by SDA transitions while SCL is high. During normal data transfer, SDA only changes while SCL is low.
-
-```text
-  I2C START and STOP conditions:
-
-  SDA: ----+         +----
-           |         |
-           +---------+
-  SCL: ------+     +------
-             |     |
-             +-----+
-        START           STOP
-      (SDA falls     (SDA rises
-      while SCL      while SCL
-      is HIGH)       is HIGH)
-```
-
-I2C problems are common and can be frustrating. Here are the most frequent issues and how to solve them.
+When a device does not answer, measure before you change code. With the bus idle, SDA and SCL must both read close to VCC on a multimeter. A line that sits low has no pull-up, or a device is holding it. Then read the status code after the address byte.
 
 | Problem | Likely Cause | Fix |
 |---------|-------------|-----|
 | No ACK from sensor | Wrong address, wiring error | Check SDA/SCL connections, try both 0x76 and 0x77 |
 | Bus stuck (SDA held low) | Sensor confused by interrupted transaction | Toggle SCL manually 9 times, then send STOP |
-| Corrupted data | Missing pull-ups | Add 4.7K pull-ups on SDA and SCL to VCC |
+| No response or corrupted data | Missing pull-ups | Add 4.7K pull-ups on SDA and SCL to VCC |
 | Intermittent failures | Long wires, noise | Keep wires under 30 cm, add decoupling capacitor near sensor |
 | All readings zero | Wrong register address or oversampling off | Verify ctrl_meas and ctrl_hum register values |
 
@@ -485,8 +495,8 @@ I2C problems are common and can be frustrating. Here are the most frequent issue
 
 
 1. Add error checking to the TWI driver: verify the status code after each operation and return an error code if something unexpected happens. Implement a retry mechanism.
-2. Display the pressure as altitude using the barometric formula: altitude = 44330 * (1 - (P/P0)^0.1903) where P0 is sea-level pressure (101325 Pa).
-3. Log all three readings over UART (from Lesson 5) in CSV format alongside the OLED display, so you can capture data on a PC.
+2. Display the pressure as altitude using the barometric formula: $\text{altitude} = 44330 \times \left(1 - (P / P_0)^{0.1903}\right)$ meters, where $P_0$ is sea-level pressure (101325 Pa).
+3. Log all three readings over UART (with the driver from the serial communication lesson) in CSV format alongside the OLED display, so you can capture data on a PC.
 4. Add a second I2C device (for example a BH1750 light sensor at address 0x23) and display its readings on the fourth line of the OLED.
 
 :::tip[Instrument it]
@@ -498,7 +508,7 @@ A BME280 is more than a demo: the same three readings catch real problems where 
 <InArticleAd />
 
 
-You now understand the I2C protocol at the register level: start/stop conditions, addressing, ACK/NACK handshaking, and burst reads. You implemented a complete TWI driver for the ATmega328P and used it to interface with the BME280, one of the most capable environmental sensors available. The weather station combines I2C input (BME280) with SPI output (OLED), demonstrating how multiple bus protocols coexist in a single project. I2C's simplicity (two wires, addressable devices) makes it the default choice for most sensor interfacing.
+I2C connects many devices to two wires. The lines are open-drain with pull-up resistors, so devices can share them without damage. The master chooses a device by its 7-bit address, and the receiver confirms every byte with an ACK. On the ATmega328P, each step is asked for through TWCR and reported in TWSR, so the driver can tell which step failed.
 
 <EmbeddedProgrammingAtmega328pComments />
 

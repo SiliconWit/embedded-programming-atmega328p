@@ -25,12 +25,12 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
-A microcontroller that runs continuously from a battery will drain it in hours. But the ATmega328P can drop its current consumption from roughly 12 mA down to under 1 microamp in power-down sleep mode. The difference between a project that lasts a day and one that lasts a year comes down to how well you manage sleep, wake sources, and peripheral shutdown. In this lesson you will explore all six sleep modes, configure the watchdog timer as both a safety net and a periodic wakeup source, and build a battery-powered door open alert. The device sleeps almost all the time, wakes when a magnetic reed switch opens, beeps a piezo buzzer, and goes right back to sleep. #PowerManagement #SleepModes #LowPower
+You fit a battery sensor in the field, and three weeks later it is dead. The program was correct, but it was awake all the time, and an awake ATmega328P takes a thousand times more current than a sleeping one: milliamps against microamps. This lesson shows how to put the chip to sleep, which events can wake it, and which small currents empty the battery while nobody watches. It also covers the watchdog timer, which restarts a program that has stopped. You will build a door alert on two AA batteries: it sleeps, wakes when the door opens, sounds a buzzer, and sleeps again. #PowerManagement #SleepModes #LowPower
 
 ## What We Are Building
 
 <Card title="Battery-Powered Door Open Alert" icon="star">
-A standalone device powered by two AA batteries (3V) that monitors a door using a magnetic reed switch. When the door opens (magnet moves away, reed switch opens), a pin-change interrupt wakes the MCU from power-down sleep. The firmware sounds a piezo buzzer for 2 seconds, blinks an LED 3 times, then returns to deep sleep. A watchdog timer provides a periodic 8-second wakeup to blink the LED once as a "still alive" heartbeat. In power-down mode with BOD disabled, the entire circuit draws under 1 microamp.
+A device on two AA batteries (3V) watches a door with a magnetic reed switch, a switch that a magnet closes. When the door opens, the magnet moves away, the switch opens, and that change wakes the MCU (the microcontroller) from its deepest sleep. The firmware sounds a piezo buzzer for 2 seconds, blinks an LED 3 times, and sleeps again. Every 8 seconds a watchdog timer wakes the chip to blink the LED once, as a sign that the device still works. Asleep, the MCU draws about 4 microamps.
 </Card>
 
 **Project specifications:**
@@ -40,7 +40,7 @@ A standalone device powered by two AA batteries (3V) that monitors a door using 
 | MCU | ATmega328P (standalone, 8 MHz internal oscillator) |
 | Power source | 2x AA batteries (3V nominal) |
 | Sleep mode | Power-down (deepest) |
-| Sleep current | Less than 1 uA (BOD disabled) |
+| Sleep current | About 4 uA for the MCU (watchdog running, BOD disabled) |
 | Active current | ~5 mA at 3V, 8 MHz |
 | Wake sources | Pin-change interrupt (reed switch), watchdog timer |
 | Alert output | Piezo buzzer (PB1), LED (PB0) |
@@ -54,16 +54,16 @@ A standalone device powered by two AA batteries (3V) that monitors a door using 
 | 1 | ATmega328P-PU (DIP-28) | 1 | Standalone chip (not on Nano) |
 | 2 | 2x AA battery holder | 1 | With leads or JST connector |
 | 3 | AA batteries | 2 | Alkaline or lithium |
-| 4 | Magnetic reed switch | 1 | Normally closed (NC) type |
-| 5 | Piezo buzzer (passive) | 1 | From Lesson 3 |
+| 4 | Magnetic reed switch | 1 | Normally open (NO) type: closed while the magnet is near |
+| 5 | Piezo buzzer (passive) | 1 | The buzzer from the timer lesson |
 | 6 | LED (any color) | 1 | Low-current type preferred |
 | 7 | 220 ohm resistor | 1 | LED current limiting |
 | 8 | 100 nF ceramic capacitor | 1 | Decoupling on VCC |
-| 9 | Breadboard | 1 | From previous lessons |
+| 9 | Breadboard | 1 | The one you already have |
 | 10 | ISP programmer (USBasp or Arduino as ISP) | 1 | For programming standalone chip |
 
 :::note
-This lesson uses a standalone ATmega328P running from the internal 8 MHz RC oscillator at 3V. The Arduino Nano has an onboard regulator and USB chip that draw significant current even when the MCU sleeps, making it unsuitable for low-power testing. You can still develop and test the code on a Nano, but power measurements should be done on the standalone circuit.
+This lesson uses the ATmega328P chip alone on a breadboard, at 3V, with its internal 8 MHz clock. The Arduino Nano is not suitable for measuring low power: its voltage regulator and USB chip draw several milliamps even when the MCU sleeps. You can still write and test the code on a Nano, but measure the current on the chip alone.
 :::
 
 ## ATmega328P Sleep Modes
@@ -71,29 +71,31 @@ This lesson uses a standalone ATmega328P running from the internal 8 MHz RC osci
 <InArticleAd />
 
 
-The ATmega328P has six sleep modes, each disabling progressively more hardware to save power. The deeper modes save more current but limit which events can wake the CPU.
+A running chip uses most of its current to switch thousands of transistors on every clock pulse. Sleep means stopping clocks: the more clocks you stop, the less current the chip takes.
 
-```mermaid
-flowchart TD
-    A["Idle\n~3 mA\nAny interrupt wakes"] --> B["ADC Noise Reduction\n~1 mA\nADC, ext int, Timer2"]
-    B --> C["Power-save\n~1 uA\nTimer2, ext int"]
-    C --> D["Power-down\n~0.1 uA\nINT0/1, PCINT, TWI"]
-    D --> E["Standby\n~0.2 uA\nSame + faster wake"]
-    E --> F["Ext. Standby\n~0.2 uA\n+ Timer2 async"]
-```
-
-The deeper the sleep, the fewer wake sources are available and the longer it takes to resume execution. Power-down mode disables everything except the external interrupt logic and the watchdog timer, achieving the lowest possible current draw.
+There is a price. A part of the chip whose clock is stopped cannot notice anything, so it cannot wake the chip. It is like a building at night: the more rooms you lock, the fewer doors are left to come in by. The ATmega328P has six sleep modes, and each stops a different set of clocks. For each mode, ask how much current remains and which events can still wake the chip.
 
 | Sleep Mode | Current (typical) | What Stays Running | Wake Sources |
 |-----------|-------------------|-------------------|--------------|
 | Idle | ~3 mA | All clocks, all peripherals | Any interrupt |
 | ADC Noise Reduction | ~1 mA | ADC, Timer2 (async), ext. interrupts | ADC complete, ext. int, Timer2, PCINT |
 | Power-save | ~1 uA | Timer2 (async), ext. interrupts | Timer2, ext. int, PCINT |
-| Power-down | ~0.1 uA | External interrupts only | INT0, INT1, PCINT, TWI address match |
+| Power-down | ~0.1 uA (~4 uA with watchdog) | External interrupts, watchdog if enabled | INT0 and INT1 (low level), PCINT, TWI address match, watchdog |
 | Standby | ~0.2 uA | Main oscillator, ext. interrupts | Same as power-down (faster wake) |
 | Extended Standby | ~0.2 uA | Main osc, Timer2 (async) | Timer2 + power-down sources |
 
+Power-down is the deepest mode, and the door alert uses it. Every clock is stopped, so only events that need no clock can wake the chip:
+
+- a low level on INT0 or INT1 (the external interrupt pins),
+- a pin-change interrupt (PCINT), which fires when a chosen pin changes level,
+- the watchdog timer, which has its own oscillator,
+- an I2C (TWI) address match.
+
+An edge on INT0 or INT1 does not wake the chip from power-down, because the circuit that detects an edge needs the clock. This is why the door alert uses a pin-change interrupt.
+
 ### Entering Sleep Mode
+
+The program stops at `sleep_cpu()`. When an interrupt wakes the chip, its interrupt routine runs first, and the program continues on the next line. If interrupts are off when the chip goes to sleep, only a reset can wake it.
 
 ```c
 #include <avr/sleep.h>
@@ -113,7 +115,12 @@ sleep_disable();
 <InArticleAd />
 
 
-Getting to sub-microamp sleep current requires more than just calling sleep_mode(). You need to disable every peripheral that draws current in the background. The PRR (Power Reduction Register) lets you shut down individual peripherals. The ADC has its own enable bit that should be cleared before sleeping. BOD (Brown-Out Detection) can be disabled during sleep to save another 15 to 20 microamps.
+The sleep instruction alone does not give microamps. Some parts of the chip use current that does not depend on the clock, and they keep using it during sleep unless you switch them off first. The target is 4 microamps, and one part left on can take 20 microamps or more:
+
+- The ADC and the analog comparator (a circuit that compares two pin voltages) draw current while they are enabled.
+- PRR (Power Reduction Register) has one bit for each timer and each serial interface. Setting a bit stops that part.
+- An input pin connected to nothing floats between low and high, and its input circuit then draws current. A pull-up gives it a definite level.
+- BOD (brown-out detection) resets the chip when the supply voltage falls too low. It takes 15 to 20 microamps, so it is switched off during sleep.
 
 ### Power Reduction Checklist
 
@@ -130,7 +137,7 @@ Getting to sub-microamp sleep current requires more than just calling sleep_mode
        | (1 << PRADC);
    ```
 
-3. Set all unused pins as inputs with pull-ups enabled (prevents floating pins from drawing current):
+3. Set all unused pins as inputs with pull-ups enabled, so that no pin floats:
    ```c
    DDRB = 0x00; PORTB = 0xFF;
    DDRC = 0x00; PORTC = 0xFF;
@@ -142,7 +149,7 @@ Getting to sub-microamp sleep current requires more than just calling sleep_mode
    ACSR |= (1 << ACD);
    ```
 
-5. Disable BOD during sleep (must be done in a timed sequence):
+5. Disable BOD during sleep. The chip accepts this only as two writes followed at once by the sleep instruction, so that it cannot happen by accident:
    ```c
    MCUCR |= (1 << BODS) | (1 << BODSE);
    MCUCR = (MCUCR & ~(1 << BODSE)) | (1 << BODS);
@@ -155,20 +162,20 @@ Getting to sub-microamp sleep current requires more than just calling sleep_mode
 <InArticleAd />
 
 
-The door alert firmware spends nearly all its time asleep, waking only on two events. The watchdog provides a periodic heartbeat, while INT0 signals an immediate alarm condition.
+A device in the field has nobody near it to press reset. If its program stops in an endless loop, it stays stopped until someone visits. The watchdog timer (WDT) is a counter that runs by itself and resets the chip when it reaches its limit. A healthy program sets the counter back to zero in time with `wdt_reset()`. A program that has stopped does not, and the chip restarts. It is like a night guard who must sign a book every hour: when a signature is missing, someone is sent to look.
+
+The watchdog has its own 128 kHz oscillator, so it keeps counting in power-down sleep. That gives it a second use. Set to raise an interrupt and not a reset, it wakes the chip at a fixed interval, from 16 ms to 8 seconds. The door alert uses it in this way, so two events can wake it:
 
 ```mermaid
 flowchart TD
-    A["Power on"] --> B["Init GPIO,\nWDT, INT0"]
+    A["Power on"] --> B["Init GPIO,\nWDT, PCINT"]
     B --> C["Enter Power-down\nsleep"]
     C --> D{"Wake source?"}
     D -->|WDT| E["Blink LED once"]
     E --> C
-    D -->|"INT0 (door)"| F["Beep 2s,\nBlink 3x"]
+    D -->|"PCINT (door)"| F["Beep 2s,\nBlink 3x"]
     F --> C
 ```
-
-The watchdog timer (WDT) has two uses: as a safety mechanism that resets the chip if the firmware hangs, and as a periodic wakeup source during sleep. It runs from a separate 128 kHz internal oscillator that operates independently of the main clock. The WDT can be configured with timeout periods from 16 ms to 8 seconds.
 
 ### Watchdog Timeout Periods
 
@@ -187,7 +194,9 @@ The watchdog timer (WDT) has two uses: as a safety mechanism that resets the chi
 
 ### Configuring WDT for Interrupt (Not Reset)
 
-By default, the watchdog resets the chip on timeout. For a periodic wakeup, you configure it to fire an interrupt instead. Setting WDIE (Watchdog Interrupt Enable) in WDTCSR makes the WDT generate an interrupt on timeout. The interrupt clears WDIE automatically, so you must re-enable it before each sleep cycle.
+Two bits of the register WDTCSR choose what a timeout does: WDE (watchdog enable) makes it reset the chip, and WDIE (watchdog interrupt enable) makes it raise an interrupt. For a wakeup at a fixed interval, set WDIE and leave WDE at 0. WDIE then stays set after each timeout. With both bits set, the first timeout raises the interrupt and clears WDIE, and the next one resets the chip unless the program sets WDIE again.
+
+The settings of the watchdog are protected against accidents: the program must write WDCE and WDE together, and then the new settings within four clock cycles.
 
 ```c
 #include <avr/wdt.h>
@@ -207,8 +216,8 @@ static void wdt_setup_interrupt_8s(void)
 
 ISR(WDT_vect)
 {
-    /* Watchdog fired. WDIE is auto-cleared. */
-    /* Re-enable for next cycle in main loop */
+    /* Watchdog fired. In interrupt-only mode (WDE = 0) WDIE stays set, */
+    /* so the next timeout fires again with no action here. */
 }
 ```
 
@@ -217,11 +226,9 @@ ISR(WDT_vect)
 <InArticleAd />
 
 
-The standalone ATmega328P circuit runs from two AA batteries with minimal external components. No crystal is needed because the internal 8 MHz oscillator provides the clock.
+The internal 8 MHz oscillator provides the clock, so no crystal is needed. The 100 nF capacitor close to the chip keeps its supply steady (a decoupling capacitor).
 
 ```text
-  Standalone ATmega328P circuit:
-
        2x AA (3V)
         +  -
         |  |
@@ -234,19 +241,20 @@ The standalone ATmega328P circuit runs from two AA batteries with minimal extern
   |  PB1---[Piezo buzzer]---GND
   |  PD2---[Reed switch]---GND
   |                   |
-  |  VCC---[100nF]---GND (decoupling)
-  |                   |
+  |  VCC---[100nF]---GND
   +-------------------+
-
-  Programming: connect USBasp to
-  MOSI, MISO, SCK, RESET, VCC, GND
 ```
 
-A magnetic reed switch is a glass tube containing two ferromagnetic contacts that close in the presence of a magnet. The normally-closed (NC) type keeps the contacts closed when the magnet is near (door closed) and opens them when the magnet moves away (door opens). Wire one terminal to the MCU pin and the other to ground. Enable the internal pull-up on the MCU pin. When the door is closed, the pin reads low (shorted to ground). When the door opens, the pin goes high (pulled up).
+To load the program, connect the USBasp programmer to the MOSI, MISO, SCK, RESET, VCC and GND pins of the chip.
+
+A magnetic reed switch is a glass tube with two thin metal contacts that close when a magnet is near. The common normally-open (NO) type is open when no magnet is near. Fit the switch on the door frame and the magnet on the door, wire one terminal to the MCU pin and the other to ground, and enable the internal pull-up on the pin.
+
+- Door closed: the switch is closed and connects the pin to ground. The pin reads low.
+- Door open: the switch is open and the pull-up brings the pin high. That change raises the pin-change interrupt.
 
 | Signal | ATmega328P Pin | Connection |
 |--------|----------------|------------|
-| Reed switch | PD2 (INT0) or PB0 (PCINT0) | One terminal to pin, other to GND |
+| Reed switch | PD2 (PCINT18) | One terminal to pin, other to GND |
 | Piezo buzzer | PB1 (OC1A) | Buzzer between PB1 and GND |
 | Status LED | PB0 | LED with 220R to GND |
 
@@ -255,9 +263,13 @@ A magnetic reed switch is a glass tube containing two ferromagnetic contacts tha
 <InArticleAd />
 
 
-Lesson 1 introduced the ATmega328P's three memory spaces: Flash (program), SRAM (runtime variables), and EEPROM (non-volatile data). Flash and SRAM lose their contents when power is removed (SRAM) or can only be written during programming (Flash). EEPROM retains data through power cycles, making it ideal for storing configuration values, calibration constants, or event counters like our door-open count.
+The door alert counts how often the door was opened, and a count in a normal variable is lost when the batteries are changed. Of the three kinds of memory you met when you set up the toolchain, only one suits this job:
 
-The ATmega328P has 1024 bytes of EEPROM with a rated endurance of 100,000 write cycles per byte. Three registers control access:
+- Flash keeps the program without power, but it is written only when you load a program.
+- SRAM holds the variables, and loses everything when power is removed.
+- EEPROM keeps its contents without power, and the running program can write it. It is the place for settings, calibration values and counters.
+
+The ATmega328P has 1024 bytes of EEPROM, each rated for 100,000 writes. Three registers control access:
 
 | Register | Purpose |
 |----------|---------|
@@ -265,9 +277,9 @@ The ATmega328P has 1024 bytes of EEPROM with a rated endurance of 100,000 write 
 | EEDR | Data byte to read or write |
 | EECR | Control: EEMPE (master program enable), EEPE (program enable), EERE (read enable) |
 
-Writing a single byte requires a timed sequence: set the address and data, enable the master program bit, then enable the program bit within four clock cycles. The CPU halts for about 3.3 ms during the write. Reading is instant (one clock cycle after setting EERE).
+Writing one byte uses a protected sequence, like the watchdog: set the address and data, set the master program bit (EEMPE), then set the program bit (EEPE) within four clock cycles. The write takes about 3.3 ms. The CPU keeps running during that time, and the next EEPROM write must wait until EEPE clears. Reading is immediate: the data is in EEDR on the next instruction (the CPU halts for four clock cycles).
 
-The avr-libc library provides `avr/eeprom.h` with convenient functions that handle the register sequence for you:
+You rarely write these registers yourself. The avr-libc library provides `avr/eeprom.h`, with functions that do the sequence for you:
 
 ```c
 #include <avr/eeprom.h>
@@ -279,9 +291,9 @@ uint16_t count = eeprom_read_word((uint16_t *)0);
 eeprom_update_word((uint16_t *)0, count + 1);
 ```
 
-The `eeprom_update_*` functions are preferred over `eeprom_write_*` because they skip the write if the value is already correct, extending EEPROM lifespan. At 10 door events per day, 100,000 write cycles would last over 27 years.
+Use the `eeprom_update_*` functions, not `eeprom_write_*`. They read the byte first and skip the write if the value is already there, which saves writes. At 10 door events per day, 100,000 writes last $100\,000 / (10 \times 365) \approx 27$ years.
 
-Our door alert will store the total number of door-open events at EEPROM address 0. Each time the reed switch triggers, the firmware increments the counter. On startup, the LED blinks the stored count (modulo 10) so you can check it without UART.
+The door alert stores the number of door openings at EEPROM address 0 and adds one each time the door opens. At power-up, the LED blinks the last digit of the count (the count modulo 10), so you can check it without a serial connection.
 
 ## Complete Firmware
 
@@ -289,8 +301,10 @@ Our door alert will store the total number of door-open events at EEPROM address
 
 
 :::note
-This lesson uses a standalone ATmega328P at 8 MHz, not the Nano's 16 MHz. You need a separate Makefile with `F_CPU = 8000000UL` (or remove the `-DF_CPU` flag from CFLAGS and let the source file define it). If you reuse the Lesson 1 Makefile without changing F_CPU, the compiler will warn about a redefinition and your delay timings will be wrong.
+This chip runs at 8 MHz, not at the 16 MHz of the Nano. You need a separate Makefile with `F_CPU = 8000000UL` (or remove the `-DF_CPU` flag from CFLAGS and let the source file define it). If you reuse the Makefile from the toolchain lesson without changing F_CPU, the compiler warns about a redefinition and every delay is wrong.
 :::
+
+Read `enter_deep_sleep()` first. An interrupt that arrived between the check of the two flags and the sleep instruction would set its flag, and the chip would then sleep on it for up to 8 seconds. So the function switches interrupts off with `cli()`, checks the flags, and switches them on with `sei()` directly before `sleep_cpu()`. The chip always runs one more instruction after `sei()` before it accepts an interrupt, so no event can arrive between the two.
 
 ```c
 #ifndef F_CPU
@@ -306,7 +320,7 @@ This lesson uses a standalone ATmega328P at 8 MHz, not the Nano's 16 MHz. You ne
 
 #define LED_PIN    PB0
 #define BUZZER_PIN PB1
-#define REED_PIN   PD2  /* INT0 */
+#define REED_PIN   PD2  /* PCINT18 */
 
 #define EE_DOOR_COUNT ((uint16_t *)0)  /* EEPROM address for door counter */
 
@@ -318,9 +332,10 @@ ISR(WDT_vect)
     wdt_fired = 1;
 }
 
-ISR(INT0_vect)
+ISR(PCINT2_vect)
 {
-    door_opened = 1;
+    /* Fires on both edges: pin high means the door opened */
+    if (PIND & (1 << REED_PIN)) door_opened = 1;
 }
 
 static void delay_ms(uint16_t ms)
@@ -360,6 +375,13 @@ static void buzzer_beep(uint16_t duration_ms)
 
 static void enter_deep_sleep(void)
 {
+    /* From here an event stays pending until sei() below */
+    cli();
+    if (door_opened || wdt_fired) {  /* Arrived while awake: handle it first */
+        sei();
+        return;
+    }
+
     /* Disable ADC */
     ADCSRA &= ~(1 << ADEN);
 
@@ -371,11 +393,11 @@ static void enter_deep_sleep(void)
         | (1 << PRTIM1) | (1 << PRSPI) | (1 << PRUSART0)
         | (1 << PRADC);
 
-    /* Set all output pins low to save power */
-    DDRB &= ~((1 << LED_PIN) | (1 << BUZZER_PIN));
+    /* Drive the LED and buzzer pins low so that they do not float */
     PORTB &= ~((1 << LED_PIN) | (1 << BUZZER_PIN));
+    DDRB |= (1 << LED_PIN) | (1 << BUZZER_PIN);
 
-    /* Re-enable watchdog interrupt (auto-cleared after each trigger) */
+    /* Keep the watchdog interrupt enabled (needed only if WDE is also set) */
     WDTCSR |= (1 << WDIE);
 
     set_sleep_mode(SLEEP_MODE_PWR_DOWN);
@@ -396,13 +418,18 @@ int main(void)
     MCUSR &= ~(1 << WDRF);
     wdt_disable();
 
-    /* Reed switch on PD2 (INT0): input with pull-up */
+    /* All pins: inputs with pull-ups so that none floats (LED and buzzer pins stay low) */
+    DDRB = 0x00; PORTB = (uint8_t)~((1 << LED_PIN) | (1 << BUZZER_PIN));
+    DDRC = 0x00; PORTC = 0xFF;
+    DDRD = 0x00; PORTD = 0xFF;
+
+    /* Reed switch on PD2 (PCINT18): input with pull-up */
     DDRD &= ~(1 << REED_PIN);
     PORTD |= (1 << REED_PIN);
 
-    /* INT0: rising edge (pin goes high when door opens) */
-    EICRA = (1 << ISC01) | (1 << ISC00);
-    EIMSK = (1 << INT0);
+    /* Pin-change interrupt on PD2 (PCINT18): wakes from power-down on any edge */
+    PCICR  = (1 << PCIE2);
+    PCMSK2 = (1 << PCINT18);
 
     /* Watchdog: interrupt mode, 8s timeout */
     cli();
@@ -458,7 +485,7 @@ int main(void)
 <InArticleAd />
 
 
-This project runs at 8 MHz on the internal oscillator, not 16 MHz like the Nano. Copy your Lesson 1 Makefile and change the clock and programmer settings:
+Copy the Makefile from the toolchain lesson and change the clock and the programmer settings:
 
 ```makefile
 MCU      = atmega328p
@@ -486,19 +513,19 @@ clean:
 .PHONY: all flash clean
 ```
 
-Note the differences from earlier lessons: `F_CPU` is 8000000UL (not 16000000UL), the programmer is `usbasp` (not `arduino`), and there is no `-P` port or `-b` baud flag since USBasp uses direct SPI, not serial.
+Three things differ from the Makefile you used with the Nano: `F_CPU` is 8000000UL (not 16000000UL), the programmer is `usbasp` (not `arduino`), and there is no `-P` port or `-b` baud flag, because the USBasp writes the chip directly over SPI and not through a serial port.
 
 ## Fuse Settings for Standalone Operation
 
 <InArticleAd />
 
 
-When running the ATmega328P standalone on batteries, you need fuse settings for the internal 8 MHz oscillator (no external crystal needed). This simplifies the circuit and saves the power that the crystal oscillator draws.
+Fuses are a few setting bytes stored in the chip, outside the program. They decide things the program cannot decide for itself, such as where the clock comes from. A chip taken from an Arduino board is set for an external crystal and does not run without one. A new chip uses the internal oscillator divided by 8, which gives 1 MHz. This program expects 8 MHz with no crystal, so set the fuses for the internal 8 MHz oscillator with no division.
 
 | Fuse | Value | Meaning |
 |------|-------|---------|
 | lfuse | 0xE2 | Internal 8 MHz RC, 65ms startup, no clock divide |
-| hfuse | 0xD9 | No bootloader, SPI enabled, EEPROM preserved |
+| hfuse | 0xD9 | No bootloader, SPI enabled, EEPROM erased by a chip erase (use 0xD1 to preserve the door count when you reflash) |
 | efuse | 0xFF | BOD disabled (we disable it in software too) |
 
 ```bash
@@ -522,18 +549,30 @@ A field sensor has to do two things you never see: last on its battery and recov
 <InArticleAd />
 
 
-To verify your power savings, measure the current with a multimeter in series with the battery. In power-down sleep, expect readings below 1 microamp (you may need a microamp-range meter). In active mode at 3V and 8 MHz, expect around 4 to 5 mA. The ratio between these two values determines your battery life: if the device sleeps 99.99% of the time, the average current is dominated by the sleep current.
+Measure the sleep current: put a multimeter with a microamp range in series with the battery. Expect three different readings:
+
+- Asleep with the door open: about 4 to 6 microamps. The watchdog oscillator takes about 4 microamps at 3V. With the watchdog off, the MCU alone would take about 0.1 microamp.
+- Asleep with the door closed: about 86 microamps more. The closed reed switch connects the internal pull-up (20K to 50K) to ground, and $3\,\text{V} / 35\,\text{k}\Omega \approx 86\,\mu\text{A}$ flows through it all the time.
+- Awake at 3V and 8 MHz: around 4 to 5 mA.
+
+The device sleeps almost all the time, so the sleep current decides the battery life, and the largest part of it here is a resistor, not the chip.
 
 ### Battery Life Estimation
+
+Battery life is the capacity of the battery divided by the average current. The average current is each current multiplied by the fraction of time it flows, all added together.
 
 | Scenario | Average Current | Battery Life (2500 mAh AA) |
 |----------|----------------|---------------------------|
 | Always active (8 MHz, 3V) | 5 mA | ~21 days |
-| Sleep with 8s heartbeat (20ms active) | ~1.5 uA average | Over 10 years (theoretical) |
-| Door opens 10 times/day (2s beep each) | ~3 uA average | Over 5 years (theoretical) |
-| Realistic with self-discharge | ~3 uA average | 1 to 2 years |
+| Sleep with 8s heartbeat (20ms active) | ~25 uA average | Over 10 years (theoretical) |
+| Door opens 10 times/day (2s beep each) | ~27 uA average | Over 10 years (theoretical) |
+| Realistic: door closed most of the time (pull-up current) | ~110 uA average | About 2.5 years |
 
-The limiting factor in most battery-powered projects is the battery's self-discharge rate (about 5% per year for alkaline), not the circuit's current draw.
+The heartbeat row is $4\,\mu\text{A} + (0.02\,\text{s} / 8\,\text{s}) \times 8\,\text{mA} \approx 24\,\mu\text{A}$, where 8 mA is the MCU plus the LED during the 20 ms blink. Ten door events per day add about $2\,\mu\text{A}$. While the door is closed, the pull-up current through the reed switch adds about $86\,\mu\text{A}$.
+
+So the realistic average is near $110\,\mu\text{A}$, and the battery lasts $2500\,\text{mAh} / 0.11\,\text{mA} \approx 22\,700\,\text{h}$, about 2.5 years. An external 1M pull-up resistor, with the internal pull-up off, reduces the pull-up current to $3\,\mu\text{A}$.
+
+The lives of over 10 years are theory: at a few microamps, the limit is the loss of charge inside the battery itself (about 5% per year for alkaline cells), not the circuit.
 
 ## Exercises
 
@@ -541,7 +580,7 @@ The limiting factor in most battery-powered projects is the battery's self-disch
 
 
 1. Add a "low battery" warning: wake every 30 minutes, read the battery voltage via the internal bandgap reference trick (measure 1.1V bandgap against VCC), and if VCC drops below 2.4V, blink the LED rapidly.
-2. Replace the reed switch with a PIR motion sensor. The sensor's digital output goes high on motion and can drive INT0 directly.
+2. Replace the reed switch with a PIR motion sensor. The sensor's digital output goes high on motion. Keep it on the pin-change interrupt of PD2: INT0 wakes the chip from power-down only on a low level, so a rising output on INT0 would not wake it.
 3. Add a "reset counter" feature: if the button is held during power-up (reed switch closed), clear the EEPROM counter to zero and confirm with a long LED flash. This lets you start fresh after checking the count.
 4. Measure and compare the sleep current with and without BOD disabled, with and without the analog comparator disabled, and with floating pins vs. pulled-up pins. Document the contribution of each source.
 
@@ -550,7 +589,7 @@ The limiting factor in most battery-powered projects is the battery's self-disch
 <InArticleAd />
 
 
-You now understand every power management feature of the ATmega328P: six sleep modes from Idle to Power-down, the Power Reduction Register, analog comparator disable, BOD disable during sleep, the watchdog timer as both a safety mechanism and a periodic wakeup source, and EEPROM for storing data that survives power cycles. The door alert project demonstrates how a battery-powered device can sleep at sub-microamp levels, wake instantly on an external event, and keep a persistent event log in non-volatile memory. These techniques are essential for any embedded system that runs on batteries, and the principles apply directly to every other microcontroller family you will encounter.
+Sleep stops clocks, and a stopped part of the chip cannot wake it. In power-down, only a low level on INT0 or INT1, a pin-change interrupt, the watchdog or a TWI address match wakes the chip. To reach a few microamps, also switch off the ADC, the analog comparator, the unused peripherals and the BOD, and leave no pin floating. The watchdog resets a program that has stopped, or wakes the chip at a fixed interval. Battery life is capacity divided by average current, and a small current that never stops, such as 86 microamps through a pull-up, can decide it.
 
 <EmbeddedProgrammingAtmega328pComments />
 

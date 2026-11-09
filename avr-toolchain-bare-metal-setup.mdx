@@ -27,22 +27,22 @@ import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedd
 
 import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 
-Before you can write meaningful firmware, you need a toolchain you actually understand. In this lesson you will install avr-gcc, avrdude, and a handful of command-line utilities, then write a Makefile that compiles, links, and flashes C code onto an Arduino Nano or Uno. No Arduino IDE, no hidden abstractions. The project is a Morse code beacon: your LED blinks out your name in dots and dashes, proving you control every byte that lands on the chip. #AVR #BareMetal #CProgramming
+The Arduino IDE puts a program on a board with one click, and it hides every step. When a program is too large, runs at the wrong speed, or will not upload, you cannot see which step failed. In this lesson you install the tools yourself (a set called a toolchain) and write a Makefile that compiles C code and sends it to an Arduino Nano or Uno. This is bare-metal programming: your program runs directly on the chip, with no framework under it. The project is a Morse code beacon that blinks your name on the LED. #AVR #BareMetal #CProgramming
 
 <PodcastEmbed src="https://open.spotify.com/episode/4UyRkT8wXCl4d6jTFAlVSY?si=enzl4wB8SPC8nHEllmRy9Q" />
 
 ### ATmega328P Pinout Reference
 
-This pinout diagram shows every pin on the ATmega328P with its port name, Arduino pin number, and alternate functions. You will refer back to this throughout the course whenever you need to map between register names in code (like PB5 or PD2) and physical pin numbers on your board.
+The ATmega328P is the microcontroller on the Nano and the Uno: one chip that holds a processor, memory and input/output pins. The code names a pin by its port and number: PB5 is pin 5 of port B. The board prints a different number beside the same pin (PB5 is "D13"). This diagram translates between the two names.
 
-![ATmega328P TQFP-32 Pinout Diagram](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/ATmega328P-TQFP-32-pinout.png)
+![Pinout of the ATmega328P in its 32-pin package: each pin with its port name such as PB5, its Arduino number such as 13, and its other functions](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/ATmega328P-TQFP-32-pinout.png)
 
-Download the full ATmega328P datasheet from [Microchip (PDF)](https://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-7810-Automotive-Microcontrollers-ATmega328P_Datasheet.pdf) ([archive copy](https://drive.google.com/file/d/1fMLGkKZbYLITJehfF9tpWpZe6VMmuEL0/view?usp=sharing)). Keep it open as you work through this course. Every register name, bit field, and timing parameter comes directly from this document.
+Download the full ATmega328P datasheet from [Microchip (PDF)](https://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-7810-Automotive-Microcontrollers-ATmega328P_Datasheet.pdf) ([archive copy](https://drive.google.com/file/d/1fMLGkKZbYLITJehfF9tpWpZe6VMmuEL0/view?usp=sharing)). Every register and bit name in this course comes from it.
 
 ## What We Are Building
 
 <Card title="Morse Code Beacon" icon="star">
-A bare-metal C program that encodes any string into International Morse Code and blinks it on the built-in LED connected to PB5 (pin 13). Dots, dashes, and inter-character gaps are all timed from a single delay function you write yourself. The entire build, flash, and fuse-check workflow runs from a single `make flash` command. No external wiring is needed for this first project.
+A bare-metal C program that turns any text into International Morse Code and blinks it on the built-in LED, which is connected to PB5 (pin 13). One command, `make flash`, builds the program and writes it into the chip's memory, which is called flashing. No external wiring is needed.
 </Card>
 
 Here is an [International Morse Code visual reference](https://drive.google.com/file/d/1mzDOp8Rn8YJk5ukaH9R67SuMCmx2IyFG/view?usp=sharing) for the dot-and-dash patterns.
@@ -68,16 +68,22 @@ Here is an [International Morse Code visual reference](https://drive.google.com/
 | 1 | Arduino Nano or Uno (ATmega328P) | 1 | Nano clone with CH340 works fine |
 | 2 | USB cable | 1 | Mini-B for most Nanos, Type-B for Uno |
 
-The built-in LED on pin 13 is all you need. No breadboard, no external components. Just plug in the USB cable and flash.
-
 :::tip[Optional: external LED for the exercises]
-Later in this lesson, an exercise asks you to add a second LED on a different pin. For that you will need a breadboard, an LED, a 220 ohm resistor, and a few jumper wires. You can grab these now or come back for them later.
+The last exercise adds a second LED. For that you need a breadboard, an LED, a 220 ohm resistor, and a few jumper wires.
 :::
 
 ## Installing the AVR Toolchain
 
 <InArticleAd />
 
+
+The chip cannot read C. It runs machine code: numbers that each mean one small instruction. Tools on your computer do the translation, each with one job:
+
+- `avr-gcc` is the compiler. It translates C into machine code for AVR chips, the family of the ATmega328P.
+- `avr-libc` is the C library. It supplies the register names, such as `PORTB`, and functions such as `_delay_ms()`.
+- `avr-objcopy` converts the compiler's output into the file format used for upload.
+- `avrdude` is the uploader. It sends that file over USB to the chip.
+- `make` runs these tools in the right order.
 
 <Tabs>
 <TabItem label="Linux">
@@ -115,7 +121,7 @@ avrdude -?
 ```
 </TabItem>
 <TabItem label="Windows">
-The recommended path on Windows is [MSYS2](https://www.msys2.org), which gives you a maintained avr-gcc and avrdude with a real installer rather than a portable build you have to wire up by hand.
+On Windows, use [MSYS2](https://www.msys2.org). It installs a maintained avr-gcc and avrdude with a normal installer.
 
 1. Install MSYS2 from https://www.msys2.org and open the **MSYS2 MINGW64** shell from the Start menu.
 2. Update the package database (run twice if it asks you to close and reopen the shell):
@@ -137,7 +143,7 @@ avr-gcc --version
 avrdude -?
 ```
 
-Older guides point to WinAVR. That project was last released in 2010, ships only as a portable build that is awkward to put on PATH, and is no longer maintained. Avoid it unless you have a specific reason to use it.
+Older guides point to WinAVR, which is no longer maintained. Do not use it.
 </TabItem>
 </Tabs>
 
@@ -159,7 +165,7 @@ Create a project directory with the following layout:
 <InArticleAd />
 
 
-The entire process from source code to running firmware follows a fixed pipeline. Each tool in the chain transforms the code into a form closer to what the hardware needs.
+The tools always run in the same order. `morse.elf` also holds information that only the computer needs, so `morse.hex` keeps the machine code alone. On the chip, the bootloader, a small program that is already there, receives the bytes and writes them into program memory.
 
 ```mermaid
 flowchart TD
@@ -175,7 +181,13 @@ flowchart TD
 <InArticleAd />
 
 
-The ATmega328P has three separate memory spaces. Flash holds your program, SRAM holds variables at runtime, and EEPROM provides non-volatile storage for configuration data. Understanding these regions helps you interpret the `avr-size` output after compiling.
+The build prints a size report, and to read it you need to know that the ATmega328P has three separate memories:
+
+- Flash (32 KB) holds the program and keeps it without power.
+- SRAM (2 KB) holds the variables while the program runs. It is lost when power is removed.
+- EEPROM (1 KB) holds data the program chooses to save, such as settings, and keeps it without power.
+
+In the drawing, the names with a dot are the compiler's names: `.text` is the machine code, `.data` is variables that start with a value, and `.bss` is variables that start at zero. The stack is working space that grows and shrinks as the program runs.
 
 ```text
   Flash (32 KB)        SRAM (2 KB)       EEPROM (1 KB)
@@ -187,20 +199,29 @@ The ATmega328P has three separate memory spaces. Flash holds your program, SRAM 
  | (your code)  |    | .bss         |   |              |
  |              |    | (zeroed)     |   |              |
  +--------------+    +--------------+   +--------------+
- | .rodata      |    |   Heap -->   |   | 0x3FF        |
- | (constants)  |    |              |   +--------------+
+ | .data values |    |   Heap -->   |   | 0x3FF        |
+ | (start copy) |    |              |   +--------------+
  +--------------+    |   <-- Stack  |
  | Bootloader   |    +--------------+
  | 0x7FFF       |    | 0x08FF       |
  +--------------+    +--------------+
 ```
 
+Flash also stores the starting values of the `.data` variables, and the chip copies them into SRAM at every start. So a table of text in your program uses flash and SRAM at the same time.
+
 ## Writing the Makefile
 
 <InArticleAd />
 
 
-A Makefile automates the compile, link, convert, and flash steps so you only type `make flash`. Here is the complete Makefile for this project. Every line is intentional: MCU and F_CPU set the target, CFLAGS enables warnings and size optimization, and the flash target calls avrdude with the correct programmer and port.
+Without a Makefile you would type three long commands after every change. A Makefile stores them, so you type only `make flash`. The top of the file sets the values the commands use:
+
+- `MCU` names the chip.
+- `F_CPU` is the clock frequency of the board in hertz. It only informs the compiler, which needs it to calculate delays. It does not set the speed of the chip.
+- `BAUD` and `PORT` are the speed and the name of the serial connection that avrdude uploads through.
+- `CFLAGS` are the compiler options: `-Os` asks for the smallest program, and `-Wall -Wextra` turn on warnings.
+
+Below them are the rules. Each rule names a file to make, the file it is made from, and on the next line the command. In a command, `$@` means the file being made and `$<` the file it is made from.
 
 ```makefile
 # Morse Beacon Makefile
@@ -236,14 +257,14 @@ clean:
 ```
 
 :::tip[Download the working files instead of copy-pasting]
-Makefiles require **literal tab characters** at the start of each recipe line, and the file must be named exactly `Makefile` with **no extension**. Both rules are easy to break: copy-pasting from the rendered code block above can convert tabs to spaces (giving `Makefile:15: *** missing separator. Stop.`), and Notepad on Windows silently saves as `Makefile.txt` (giving `No targets specified and no makefile found`).
+Each command line must start with a real tab character, and the file must be named exactly `Makefile` with no extension. Copying from the code block above can turn tabs into spaces (the error is `Makefile:15: *** missing separator. Stop.`). Notepad on Windows saves the file as `Makefile.txt` (the error is `No targets specified and no makefile found`).
 
 Download the verified files directly:
 
 - [Makefile](https://raw.githubusercontent.com/SiliconWit/embedded-programming-atmega328p/main/code/avr-toolchain-bare-metal-setup/Makefile)
 - [main.c](https://raw.githubusercontent.com/SiliconWit/embedded-programming-atmega328p/main/code/avr-toolchain-bare-metal-setup/main.c)
 
-Or grab both in one go:
+Or download both from a terminal:
 
 ```bash
 curl -O https://raw.githubusercontent.com/SiliconWit/embedded-programming-atmega328p/main/code/avr-toolchain-bare-metal-setup/Makefile
@@ -252,10 +273,10 @@ curl -O https://raw.githubusercontent.com/SiliconWit/embedded-programming-atmega
 
 You can browse the folder at [github.com/SiliconWit/embedded-programming-atmega328p/tree/main/code/avr-toolchain-bare-metal-setup](https://github.com/SiliconWit/embedded-programming-atmega328p/tree/main/code/avr-toolchain-bare-metal-setup).
 
-If you do hand-type the Makefile, verify the indentation with `cat -A Makefile`. Every recipe line should start with `^I` (a tab), not spaces.
+If you type the Makefile by hand, check it with `cat -A Makefile`. Every command line should start with `^I` (a tab), not spaces.
 :::
 
-The USB connection between your computer and the Arduino Nano looks like this electrically. The CH340 or FTDI chip on the Nano translates USB to TTL serial, which connects to the ATmega328P UART pins used by the bootloader during flashing.
+The ATmega328P has no USB connection of its own. A second chip on the board (a CH340 or FTDI chip on the Nano) receives USB and passes the bytes on as a serial signal, one bit after another, to pins PD0 and PD1. The bootloader listens there during flashing.
 
 ```text
   +-----------+  USB cable  +---------------------------+
@@ -270,14 +291,20 @@ The USB connection between your computer and the Arduino Nano looks like this el
                             +---------------------------+
 ```
 
-The Makefile defaults to `/dev/ttyUSB0`, which is typical on Linux. On macOS the port is usually `/dev/cu.usbserial-XXX`, and on Windows it is something like `COM3`. Adjust the PORT variable to match your system.
+The Makefile defaults to `/dev/ttyUSB0`, which is typical on Linux. On macOS the port is usually `/dev/cu.usbserial-XXX`, and on Windows it is something like `COM3`. Change the PORT variable to match your system.
 
 ## Writing main.c
 
 <InArticleAd />
 
 
-The firmware does three things: define a Morse code lookup table, implement a blocking delay using a busy loop calibrated to F_CPU, and loop through each character of a message string to blink the LED. The entire program fits comfortably under 1 KB of flash.
+The program has three parts:
+
+1. A table, `morse[]`, with the dots and dashes for each letter A to Z.
+2. A delay function. `_delay_ms()` makes the processor count clock cycles and do nothing else. The compiler works out how many from `F_CPU`, so a wrong `F_CPU` gives wrong times.
+3. A loop in `main()` that finds each letter of the message in the table and blinks it.
+
+`DDRB` and `PORTB` are registers. A register is a byte inside the chip whose bits are wired to hardware, so writing to it changes what a pin does. `DDRB |= (1 << PB5)` makes pin PB5 an output, and `led_on()` and `led_off()` switch it high and low. The lesson on GPIO registers explains these lines.
 
 ```c
 #define F_CPU 16000000UL
@@ -291,8 +318,8 @@ The firmware does three things: define a Morse code lookup table, implement a bl
 #define DOT_MS    200
 #define DASH_MS   600
 #define SYMBOL_GAP  200   /* gap between dots/dashes in a letter */
-#define LETTER_GAP  600   /* gap between letters */
-#define WORD_GAP   1400   /* gap between words */
+#define LETTER_GAP  400   /* added after the symbol gap: 600 between letters */
+#define WORD_GAP    800   /* added after the letter gap: 1400 between words */
 
 /* Morse lookup: A-Z encoded as strings of '.' and '-' */
 static const char *morse[] = {
@@ -387,30 +414,32 @@ int main(void)
    make flash
    ```
 
-5. Watch the built-in LED on pin 13. It should blink your name in Morse code, pause, and repeat. No external wiring needed.
+5. Watch the built-in LED on pin 13. It should blink your name in Morse code, pause, and repeat.
 </Steps>
+
+If avrdude reports `not in sync`, the upload speed is wrong for your board. Many Nano boards carry an older bootloader that listens at 57600. Set `BAUD = 57600` in the Makefile and run `make flash` again.
 
 ## Reading the Fuse Bits
 
 <InArticleAd />
 
 
-Fuse bits configure low-level chip behavior: clock source, brown-out detection, boot size, and more. They are stored in non-volatile memory separate from flash. Reading them helps you confirm the board is running from the external 16 MHz crystal as expected.
+Some settings must be known before any program runs, for example which clock source the chip uses. The chip keeps them in three fuse bytes, stored apart from flash. They also set the size of the bootloader area and the brown-out detector (BOD), which holds the chip in reset when the supply voltage is too low. Reading them confirms that the board runs from its external 16 MHz crystal.
 
 ```bash
 make fuses
 ```
 
-Typical Nano/Uno fuse values:
+Typical Nano/Uno fuse values are below. If all three read as zero, the bootloader ignored the request, and only a separate hardware programmer can read the real values.
 
 | Fuse | Value | Meaning |
 |------|-------|---------|
-| lfuse | 0xFF | External full-swing crystal, slowly rising power |
-| hfuse | 0xDA | 512-word bootloader, SPI programming enabled |
+| lfuse | 0xFF | External low-power crystal oscillator (8 to 16 MHz), slowly rising power |
+| hfuse | 0xDA | 1024-word (2 KB) boot section, SPI programming enabled (an Uno with Optiboot reads 0xDE: 256 words) |
 | efuse | 0xFD | BOD at 2.7V |
 
 :::caution
-Do not write fuse bits unless you know exactly what you are doing. Incorrect fuse settings can make the chip unprogrammable without a high-voltage programmer.
+Only read the fuse bytes. A wrong fuse setting can stop the chip from accepting programs, and then only a high-voltage programmer can recover it.
 :::
 
 ## Understanding the Build Output
@@ -418,13 +447,15 @@ Do not write fuse bits unless you know exactly what you are doing. Incorrect fus
 <InArticleAd />
 
 
-When you run `make`, avr-size prints a memory usage summary. The ATmega328P has 32 KB of flash, 2 KB of SRAM, and 1 KB of EEPROM. Your Morse beacon should use well under 1 KB of flash and only a few bytes of RAM. Getting comfortable reading these numbers early will save you from mysterious crashes later when projects grow larger.
+When you run `make`, avr-size prints how much memory the program uses. "Program" is flash, out of 32 KB. "Data" is SRAM, out of 2 KB. Most of the 116 bytes of Data are the Morse table, copied into SRAM at every start.
+
+Watch the Data line as your projects grow. The stack also lives in SRAM and is not counted here. When Data fills most of the 2 KB, the two overwrite each other and the program fails at random.
 
 ```
 AVR Memory Usage
 ----------------
-Program:     512 bytes (1.6% Full)
-Data:         9 bytes (0.4% Full)
+Program:     428 bytes (1.3% Full)
+Data:        116 bytes (5.7% Full)
 ```
 
 ## Exercises
@@ -444,7 +475,7 @@ Data:         9 bytes (0.4% Full)
 <InArticleAd />
 
 
-You now have a working bare-metal AVR development environment. You can compile C code with avr-gcc, convert it to Intel HEX format, flash it with avrdude, and read fuse bits. The Makefile gives you a repeatable one-command workflow. Every lesson that follows builds on this same toolchain, so make sure `make flash` works reliably before moving on.
+You can now compile C code with avr-gcc, flash it with avrdude, and read the fuse bytes and the size report. Every later lesson uses this toolchain, so make sure `make flash` works every time before you continue.
 
 <EmbeddedProgrammingAtmega328pComments />
 

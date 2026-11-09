@@ -27,14 +27,14 @@ import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedd
 
 import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 
-Serial communication is how your microcontroller talks to the outside world. In this lesson you will configure the ATmega328P USART peripheral from scratch, calculating baud rates from register values, setting frame formats, and implementing both blocking and interrupt-driven transmit/receive. The project is a temperature logger: an NTC thermistor feeds the ADC, the firmware converts the reading to degrees Celsius using the Steinhart-Hart equation, and streams timestamped CSV lines over UART for capture and plotting on a PC. #UART #Serial #DataLogging
+A board with no screen cannot show you what it is doing. A wrong sensor reading stays hidden inside the chip, and you can only guess at the fault. A serial link solves this with two wires: the chip sends text to your computer, one bit after another. In this lesson you set up the serial hardware of the ATmega328P from its registers and learn why both ends must agree on the speed. The project is a temperature logger that sends one reading a second as a line of text. #UART #Serial #DataLogging
 
 <PodcastEmbed src="https://open.spotify.com/episode/6TfVbjBI7HmBa0TZ0xaPAc?si=3_WlbDveT56-KqJrNnF-jQ" />
 
 ## What We Are Building
 
 <Card title="Temperature Logger with CSV Export" icon="star">
-A continuous temperature logger that samples an NTC thermistor once per second, converts the ADC reading to Celsius, and transmits CSV-formatted data (timestamp, raw ADC, temperature) over UART at 9600 baud. On the PC side, you capture the serial stream to a file and plot it with Python, a spreadsheet, or any tool that reads CSV. A ring buffer handles transmit buffering so the main loop never blocks on UART.
+A logger that reads an NTC thermistor, a resistor whose resistance falls as it gets warmer, once per second. The chip measures it with its analog to digital converter (ADC), which turns a voltage into a number from 0 to 1023 and has its own lesson later. The firmware converts the number to degrees Celsius and sends a line of comma separated values (CSV) over the UART at 9600 baud: time, raw ADC number, temperature. On the PC you save the lines to a file and plot them.
 </Card>
 
 **Project specifications:**
@@ -47,14 +47,14 @@ A continuous temperature logger that samples an NTC thermistor once per second, 
 | ADC channel | ADC0 (PC0, Arduino A0) |
 | Sample rate | 1 Hz |
 | Output format | CSV: timestamp_ms, adc_raw, temp_c |
-| TX buffer | 64-byte ring buffer |
+| TX buffer | 64-byte ring buffer (optional, shown as a technique) |
 
 ### Parts for This Lesson
 
 | Ref | Component | Quantity | Notes |
 |-----|-----------|----------|-------|
-| 1 | Arduino Nano or Uno (ATmega328P) | 1 | From previous lessons |
-| 2 | Breadboard | 1 | From previous lessons |
+| 1 | Arduino Nano or Uno (ATmega328P) | 1 | Already in your kit |
+| 2 | Breadboard | 1 | Already in your kit |
 | 3 | 10K NTC thermistor | 1 | Glass bead or epoxy type |
 | 4 | 10K ohm resistor | 1 | Voltage divider partner |
 | 5 | Jumper wires | ~4 | Male-to-male |
@@ -64,55 +64,70 @@ A continuous temperature logger that samples an NTC thermistor once per second, 
 <InArticleAd />
 
 
-A UART frame at 8N1 consists of a start bit (always low), eight data bits (LSB first), and a stop bit (always high). The idle state is high, so the receiver detects the falling edge of the start bit to begin sampling each bit at the center of its period.
+A UART (universal asynchronous receiver/transmitter) sends bits on one wire with no clock wire beside it. So the receiver has two problems: it cannot know when a byte begins, and it cannot know how long each bit lasts. The frame solves both:
+
+- The wire rests high. Every byte begins with a start bit, which is low. Its falling edge tells the receiver that a byte begins.
+- Both sides are set to the same speed in advance: the baud rate, in bits per second. From the start edge the receiver measures time with its own clock and reads each bit at the middle of its period.
+- After the eight data bits, lowest bit (D0) first, comes a stop bit, which is high. It returns the wire to rest, so the next start edge can be seen.
+
+This format is written 8N1: 8 data bits, no parity bit (an optional check bit), 1 stop bit.
 
 ```text
-  UART 8N1 frame format (one byte):
+  The letter 'A' (0x41 = binary 01000001), D0 first:
 
-  Idle  Start D0  D1  D2  D3  D4  D5  D6  D7 Stop Idle
-  ____       ___     ___         ___ ___ ___  _______
-      |     |   |   |   |       |   |   |   |
-      |_____|   |___|   |_______|   |   |   |
-       ^                                      ^
-     start                                  stop
-     bit                                    bit
+  idle                                              idle
+  ____     ___                     ___     ___________
+      |   |   |                   |   |   |
+      |___|   |___________________|   |___|
+       St  D0  D1  D2  D3  D4  D5  D6  D7  Sp
+       0   1   0   0   0   0   0   1   0   1
 
-  Bit period = 1 / baud_rate
-  At 9600 baud: ~104 us per bit
-  Total frame: 10 bits = ~1.04 ms
+  St = start bit, Sp = stop bit
+  At 9600 baud one bit lasts 1/9600 s = 104 us
+  One byte needs 10 bits = 1.04 ms
 ```
 
-The ATmega328P has one USART peripheral (USART0) controlled by five registers. UDR0 is the data register for both transmit and receive. UCSR0A holds status flags (transmit complete, receive complete, data register empty). UCSR0B enables the transmitter, receiver, and interrupts. UCSR0C sets the frame format. UBRR0 (split into UBRR0H and UBRR0L) sets the baud rate.
+In the ATmega328P this hardware is called USART0. The S stands for a synchronous mode with a clock wire, which this lesson does not use. Five registers control it:
 
 | Register | Purpose |
 |----------|---------|
-| UDR0 | Transmit/Receive data buffer |
-| UCSR0A | Status: RXC0, TXC0, UDRE0, frame error, parity error |
-| UCSR0B | Enable: RXEN0, TXEN0, RXCIE0, TXCIE0, UDRIE0 |
-| UCSR0C | Frame format: UCSZ (data bits), UPM (parity), USBS (stop bits) |
-| UBRR0H/L | Baud rate register (12-bit) |
+| UDR0 | The data: write a byte here to send it, read here to get a received byte |
+| UCSR0A | Status flags. UDRE0 = ready for the next byte to send. RXC0 = a byte has arrived |
+| UCSR0B | Switches: TXEN0 and RXEN0 turn on the transmitter and the receiver. The bits ending in IE turn on interrupts |
+| UCSR0C | Frame format: number of data bits (UCSZ), parity (UPM), stop bits (USBS) |
+| UBRR0H/L | Baud rate, a 12-bit number in two bytes |
 
 ### Baud Rate Calculation
 
-The baud rate is derived from the system clock and the UBRR value. In normal speed mode (U2X0 = 0), the formula is: UBRR = (F_CPU / (16 * BAUD)) - 1. For 16 MHz and 9600 baud: UBRR = (16000000 / (16 * 9600)) - 1 = 103. The actual baud rate with UBRR=103 is 9615, giving an error of 0.16%, which is well within the acceptable range.
+The chip makes its bit timing by dividing the system clock by a whole number that you write into UBRR. In normal speed mode (bit U2X0 = 0), where $F_{\text{CPU}}$ is the clock in hertz and BAUD is the speed you want:
+
+$$
+\text{UBRR} = \frac{F_{\text{CPU}}}{16 \times \text{BAUD}} - 1
+$$
+
+For 16 MHz and 9600 baud: $\text{UBRR} = 16\,000\,000 / (16 \times 9600) - 1 = 103.17$. The register holds only whole numbers, so you write 103, and the real speed is $16\,000\,000 / (16 \times 104) = 9615$ baud. That is 0.16% too fast.
+
+A small error is harmless, because the receiver starts its timing again at every start bit. But inside one byte the error adds up over ten bits, and at the last bit the receiver may read the wrong one. The datasheet recommends an error of no more than about 2%.
 
 | Baud Rate | UBRR (16 MHz) | Actual Baud | Error |
 |-----------|---------------|-------------|-------|
-| 2400 | 416 | 2400 | 0.0% |
-| 9600 | 103 | 9615 | 0.2% |
-| 19200 | 51 | 19231 | 0.2% |
-| 38400 | 25 | 38462 | 0.2% |
+| 2400 | 416 | 2398 | 0.08% |
+| 9600 | 103 | 9615 | 0.16% |
+| 19200 | 51 | 19231 | 0.16% |
+| 38400 | 25 | 38462 | 0.16% |
 | 57600 | 16 | 58824 | 2.1% |
 | 115200 | 8 | 111111 | 3.5% |
 
 :::caution
-At 115200 baud with a 16 MHz crystal, the baud rate error is 3.5%. This is marginal and can cause framing errors with some USB-serial adapters. Use 9600 or 19200 for reliable communication, or enable double-speed mode (U2X0 = 1) to halve the error at higher baud rates.
+At 115200 baud with a 16 MHz crystal, the baud rate error is 3.5%. This is at the limit, and some USB-serial adapters then report framing errors (a stop bit that reads low). Use 9600 or 19200 for reliable communication, or enable double-speed mode (U2X0 = 1, $\text{UBRR} = F_{\text{CPU}} / (8 \times \text{BAUD}) - 1$), which lowers the error to 2.1% at 115200 baud (UBRR = 16) and to 0.8% at 57600 baud (UBRR = 34).
 :::
 
 ## UART Initialization
 
 <InArticleAd />
 
+
+Setting up the UART is three writes: the baud rate, the switches for the transmitter and the receiver, and the frame format. The macro `UBRR_VAL` is the formula above. The compiler calculates it with whole numbers, so 103.17 becomes 103.
 
 ```c
 #define F_CPU 16000000UL
@@ -138,6 +153,8 @@ static void uart_init(void)
 <InArticleAd />
 
 
+The transmitter sends one byte at a time, and at 9600 baud a byte takes about 1 ms. So before each write to `UDR0` the code must wait until the flag UDRE0 shows that the register is free. The simplest way is to wait in a loop. This is called blocking, because the program does nothing else during the wait. A line of 30 characters holds the program for about 31 ms.
+
 ```c
 static void uart_putc(char c)
 {
@@ -162,13 +179,9 @@ static void uart_puts(const char *s)
 <InArticleAd />
 
 
-The complete firmware later in this lesson uses blocking TX for simplicity. The ring buffer technique shown here is a common optimization you can apply when your main loop cannot afford to wait for each byte to finish sending.
-
-A ring buffer (circular buffer) decouples the producer (main code adding characters) from the consumer (UART hardware sending them).
+The logger sends one short line a second, so the complete firmware below uses blocking transmit. When a main loop cannot wait, use a ring buffer. It works as a queue at a counter. The main code puts characters at the back of the queue and continues at once. An interrupt takes one character from the front each time the transmitter is free. The queue is an array with two positions: `head`, where the main code writes next, and `tail`, where the ISR reads next.
 
 ```text
-  Ring buffer (64 bytes):
-
   +---+---+---+---+---+---+---+---+
   | A | B | C | D |   |   |   |   |
   +---+---+---+---+---+---+---+---+
@@ -176,20 +189,19 @@ A ring buffer (circular buffer) decouples the producer (main code adding charact
     tail            head
     (ISR reads      (main writes
      next byte)      next byte)
+```
 
-  After ISR sends 'A' and main writes 'E':
+After the ISR has sent 'A' and the main code has written 'E', both positions have moved one place. At the end of the array each position returns to the start, which gives the ring its name.
 
+```text
   +---+---+---+---+---+---+---+---+
   |   | B | C | D | E |   |   |   |
   +---+---+---+---+---+---+---+---+
         ^               ^
         tail            head
-
-  Wraps around when head or tail
-  reaches the end of the array.
 ```
 
-The main code writes to the buffer and enables the UDRE interrupt. The ISR sends one byte at a time and disables itself when the buffer is empty. This prevents the main loop from stalling while long strings are transmitted.
+`tx_enqueue()` stores a character and switches on the UDRE interrupt, which fires whenever the transmitter can take a byte. The ISR sends one byte, and switches itself off when `head` equals `tail`: the queue is empty. If the queue is full, `tx_enqueue()` waits for a free place.
 
 ```c
 #define TX_BUF_SIZE 64
@@ -228,7 +240,7 @@ static void tx_puts(const char *s)
 <InArticleAd />
 
 
-The thermistor and fixed resistor form a voltage divider whose output voltage changes with temperature. The ADC reads this voltage and the firmware converts it to degrees Celsius.
+The ADC measures voltage, not resistance. So the thermistor is placed in series with a fixed 10K resistor across the 5 V supply. The two share the voltage in proportion to their resistances (a voltage divider), and the ADC reads the point between them. When the thermistor warms, its resistance falls and the voltage at the ADC pin rises.
 
 ```text
          VCC (5V)
@@ -244,23 +256,27 @@ The thermistor and fixed resistor form a voltage divider whose output voltage ch
          GND
 ```
 
-![Arduino Nano with NTC thermistor voltage divider wired to ADC0 for UART temperature logger](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-Thermistor-UART.png)
+![Wiring on an Arduino Nano: the thermistor from 5V to A0, and a 10K resistor from A0 to GND](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-Thermistor-UART.png)
 
-The NTC thermistor forms a voltage divider with a fixed 10K resistor. The thermistor connects from the ADC input to VCC, and the fixed resistor connects from the ADC input to ground. As temperature increases, the thermistor resistance decreases, and the voltage at the ADC pin drops. The Steinhart-Hart equation (simplified B-parameter version) converts resistance to temperature.
+The firmware goes from the ADC number to a temperature in two steps.
+
+First, the resistance. The voltage at the ADC pin is $V_{\text{adc}} = V_{CC} \times R_{\text{fixed}} / (R_{\text{therm}} + R_{\text{fixed}})$. The 10-bit ADC divides the range 0 to VCC into 1024 steps, so the reading is $\text{adc} = 1024 \times R_{\text{fixed}} / (R_{\text{therm}} + R_{\text{fixed}})$. Solving for $R_{\text{therm}}$:
+
+```
+R_therm = R_fixed * (1024 - adc) / adc
+```
 
 ### Steinhart-Hart B-Parameter Equation
+
+Second, the temperature. The resistance of a thermistor does not fall in a straight line with temperature, so the conversion needs a logarithm. This short form of the Steinhart-Hart equation is accurate enough near room temperature:
 
 ```
 1/T = 1/T0 + (1/B) * ln(R/R0)
 ```
 
-Where T0 = 298.15 K (25 C), R0 = 10000 ohms, and B = 3950 (from the thermistor datasheet).
+$T$ is the temperature in kelvin (degrees Celsius plus 273.15), $R$ is the thermistor resistance in ohms, and ln is the natural logarithm. $R_0 = 10\,000\,\Omega$ is the resistance at $T_0 = 298.15\,\text{K}$ (25 C), and $B = 3950$ comes from the thermistor datasheet.
 
-The voltage at the ADC pin is determined by the voltage divider: V_adc = VCC * R_fixed / (R_therm + R_fixed). Since the 10-bit ADC maps 0 to VCC across 0 to 1023, the ADC reading is adc = 1023 * R_fixed / (R_therm + R_fixed). Solving for R_therm:
-
-```
-R_therm = R_fixed * (1023 - adc) / adc
-```
+For example, a reading of 600 gives $R = 10\,000 \times (1024 - 600) / 600 = 7067\,\Omega$, and then $T = 306.2\,\text{K}$, which is 33.0 C. A reading of 512, half of the range, means the two resistances are equal: 10,000 ohms, 25.0 C.
 
 ## Complete Firmware
 
@@ -363,7 +379,7 @@ static int16_t adc_to_temp_x10(uint16_t adc_val)
 {
     if (adc_val == 0) adc_val = 1;  /* Avoid division by zero */
 
-    double r_therm = R_FIXED * (1023.0 - adc_val) / adc_val;
+    double r_therm = R_FIXED * (1024.0 - adc_val) / adc_val;
     double t_kelvin = 1.0 / ((1.0 / T0_K) + (log(r_therm / R0) / B_COEFF));
     double t_celsius = t_kelvin - 273.15;
 
@@ -471,7 +487,7 @@ plt.show()
 <InArticleAd />
 
 
-You now know how to configure the ATmega328P USART from register level: baud rate calculation, frame format, blocking and interrupt-driven I/O, and ring buffers for non-blocking transmission. The temperature logger demonstrates a complete data pipeline from analog sensor through ADC to formatted serial output. UART is the simplest and most universal communication interface in embedded systems, and it will serve as your primary debugging tool in every lesson that follows.
+A UART sends each byte as a start bit, eight data bits and a stop bit, with no clock wire, so both ends must use the same baud rate within about 2%. You set the rate with UBRR and write a byte to UDR0 when the flag UDRE0 is set. Blocking transmit is enough for a slow logger, and a ring buffer keeps a busy main loop free. From here on, text over the UART is your main tool for finding faults.
 
 <EmbeddedProgrammingAtmega328pComments />
 

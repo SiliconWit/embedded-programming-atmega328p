@@ -66,52 +66,52 @@ Every lesson follows the same cycle:
 
 <CardGrid>
   <Card title="Lesson 1: AVR Toolchain and Bare-Metal C" icon="star">
-    [AVR Toolchain and Bare-Metal Setup](./avr-toolchain-bare-metal-setup). Install avr-gcc, avrdude, and write your first Makefile. Build a Morse code beacon that blinks your name on an LED. First contact with register-level programming.
+    [AVR Toolchain and Bare-Metal Setup](/education/embedded-programming-atmega328p/avr-toolchain-bare-metal-setup/). Install avr-gcc, avrdude, and write your first Makefile. Build a Morse code beacon that blinks your name on an LED. First contact with register-level programming.
     **Build:** Morse code beacon. **Parts:** Nano, breadboard, LED, 220R resistor.
   </Card>
 
   <Card title="Lesson 2: GPIO Registers and Digital I/O" icon="document">
-    [GPIO Registers and Digital I/O](./gpio-registers-digital-io). Master DDRx, PORTx, PINx registers and bit manipulation. Build an electronic dice with button input and random LED patterns using a simple LFSR.
+    [GPIO Registers and Digital I/O](/education/embedded-programming-atmega328p/gpio-registers-digital-io/). Master DDRx, PORTx, PINx registers and bit manipulation. Build an electronic dice with button input and random LED patterns using a simple LFSR.
     **Build:** Electronic dice. **Parts:** 3 more LEDs, push button, 10K resistor.
   </Card>
 
   <Card title="Lesson 3: Timer/Counter Fundamentals" icon="document">
-    [Timer/Counter Fundamentals](./timer-counter-fundamentals). Explore Timer0, Timer1, and Timer2 in Normal, CTC, and PWM modes. Prescalers, overflow interrupts, output compare. Build a tunable tone generator with precise frequencies.
+    [Timer/Counter Fundamentals](/education/embedded-programming-atmega328p/timer-counter-fundamentals/). Explore Timer0, Timer1, and Timer2 in Normal, CTC, and PWM modes. Prescalers, overflow interrupts, output compare. Build a tunable tone generator with precise frequencies.
     **Build:** Tunable tone generator. **Parts:** Piezo buzzer.
   </Card>
 
   <Card title="Lesson 4: Interrupts and Event-Driven Design" icon="document">
-    [Interrupts and Event-Driven Design](./interrupts-event-driven-design). Configure INT0/INT1, pin-change interrupts, and timer interrupts. Learn ISR design patterns, volatile variables, and atomic blocks. Build a reaction time tester.
+    [Interrupts and Event-Driven Design](/education/embedded-programming-atmega328p/interrupts-event-driven-design/). Configure INT0/INT1, pin-change interrupts, and timer interrupts. Learn ISR design patterns, volatile variables, and atomic blocks. Build a reaction time tester.
     **Build:** Reaction time tester. **Parts:** Reuse existing.
   </Card>
 
   <Card title="Lesson 5: UART Serial Communication" icon="document">
-    [UART Serial Communication](./uart-serial-communication). Set up the USART peripheral from scratch: baud rate calculation, TX/RX registers, ring buffers, printf redirect. Build a temperature logger that streams CSV to your PC.
+    [UART Serial Communication](/education/embedded-programming-atmega328p/uart-serial-communication/). Set up the USART peripheral from scratch: baud rate calculation, TX/RX registers, ring buffers, printf redirect. Build a temperature logger that streams CSV to your PC.
     **Build:** Temperature logger with CSV export. **Parts:** 10K thermistor.
   </Card>
 
   <Card title="Lesson 6: SPI Protocol and Peripheral Interfacing" icon="document">
-    [SPI Protocol and Peripheral Interfacing](./spi-protocol-peripheral-interfacing). Master the SPI peripheral: SPCR, SPSR, clock polarity/phase, master/slave select. Write an SSD1306 OLED driver from scratch. Build a real-time clock display.
+    [SPI Protocol and Peripheral Interfacing](/education/embedded-programming-atmega328p/spi-protocol-peripheral-interfacing/). Master the SPI peripheral: SPCR, SPSR, clock polarity/phase, master/slave select. Write an SSD1306 OLED driver from scratch. Build a real-time clock display.
     **Build:** OLED clock display. **Parts:** SSD1306 OLED (SPI).
   </Card>
 
   <Card title="Lesson 7: I2C Bus and Sensor Integration" icon="document">
-    [I2C Bus and Sensor Integration](./i2c-bus-sensor-integration). Implement I2C (TWI) communication: start/stop conditions, addressing, ACK/NACK, multi-byte reads. Interface a BME280 for temperature, humidity, and pressure on your OLED.
+    [I2C Bus and Sensor Integration](/education/embedded-programming-atmega328p/i2c-bus-sensor-integration/). Implement I2C (TWI) communication: start/stop conditions, addressing, ACK/NACK, multi-byte reads. Interface a BME280 for temperature, humidity, and pressure on your OLED.
     **Build:** Mini weather station. **Parts:** BME280 module.
   </Card>
 
   <Card title="Lesson 8: ADC and Analog Signal Acquisition" icon="document">
-    [ADC and Analog Signal Acquisition](./adc-analog-signal-acquisition). Configure the 10-bit ADC: reference voltage selection, channel multiplexing, free-running vs single conversion, noise reduction techniques. Build a light-tracking indicator.
+    [ADC and Analog Signal Acquisition](/education/embedded-programming-atmega328p/adc-analog-signal-acquisition/). Configure the 10-bit ADC: reference voltage selection, channel multiplexing, free-running vs single conversion, noise reduction techniques. Build a light-tracking indicator.
     **Build:** Light-tracking indicator. **Parts:** 2 LDRs, 2 resistors.
   </Card>
 
   <Card title="Lesson 9: Power Management and Watchdog" icon="document">
-    [Power Management and Watchdog](./power-management-watchdog-sleep). Explore all sleep modes (Idle through Power-down), watchdog timer configuration, BOD disable, EEPROM storage, and wakeup sources. Build a battery-powered door open alert with persistent event counting.
+    [Power Management and Watchdog](/education/embedded-programming-atmega328p/power-management-watchdog-sleep/). Explore all sleep modes (Idle through Power-down), watchdog timer configuration, BOD disable, EEPROM storage, and wakeup sources. Build a battery-powered door open alert with persistent event counting.
     **Build:** Battery-powered door alert. **Parts:** 2xAA battery holder, reed switch.
   </Card>
 
   <Card title="Lesson 10: Integrated Stepper Motor and Motion Control" icon="star">
-    [Integrated Stepper Motor and Motion Control](./integrated-stepper-motion-control). Combine every peripheral from the course into a single-axis CNC-style controller. Parse G-code over UART, generate step pulses with Timer1, home with a limit switch interrupt, jog with an ADC potentiometer, and store calibration in EEPROM.
+    [Integrated Stepper Motor and Motion Control](/education/embedded-programming-atmega328p/integrated-stepper-motion-control/). Combine every peripheral from the course into a single-axis CNC-style controller. Parse G-code over UART, generate step pulses with Timer1, home with a limit switch interrupt, jog with an ADC potentiometer, and store calibration in EEPROM.
     **Build:** Single-axis stepper controller. **Parts:** A4988 driver, NEMA 17 motor, limit switch, 10K pot, 12V supply.
   </Card>
 </CardGrid>

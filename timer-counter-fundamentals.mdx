@@ -27,14 +27,14 @@ import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
-Timers are the workhorses of embedded systems. They count clock cycles in hardware, freeing the CPU to do other work while generating precise time intervals, PWM signals, and frequency outputs. The ATmega328P has three timers, and in this lesson you will configure all of them. The project is a tone generator: two buttons step the frequency up and down, and a piezo buzzer plays the tone using Timer1 in CTC mode with hardware output compare. You will hear exactly how prescalers and compare values translate into audible frequencies. #Timers #CTC #PWM
+A program that keeps time with a delay loop can do nothing else while it waits. It cannot read a button during the delay, and a tone made this way changes pitch whenever the program does other work. A timer removes the problem: it is a counter built in hardware that counts clock cycles by itself, whatever the program is doing. The ATmega328P has three timers. In this lesson you use one of them to build a tone generator: two buttons step the pitch up and down, and the timer drives a piezo buzzer directly, so you hear what each setting does. #Timers #CTC #PWM
 
 <PodcastEmbed src="https://open.spotify.com/episode/2lQEZPMY8cpp8XPVwukUL0?si=heWxjaGaSjaHnCwWzdW3ig" />
 
 ## What We Are Building
 
 <Card title="Tunable Tone Generator" icon="star">
-A piezo buzzer driven by Timer1 in CTC mode with hardware toggle on the OC1A pin. Two push buttons adjust the frequency up and down in semitone steps across two octaves (C4 through C6, roughly 262 Hz to 1047 Hz). The frequency calculation is done entirely from the timer formula: f = F_CPU / (2 * prescaler * (1 + OCR1A)). No delay loops are involved in tone generation.
+A piezo buzzer on pin OC1A, a pin that Timer1 can switch by itself. Two push buttons move the pitch up and down in semitones (the smallest step between two notes on a piano) across two octaves, from C4 (262 Hz) to C6 (1047 Hz). Two numbers that you write into the timer set the frequency: the prescaler and the compare value. No delay loop takes part in making the tone.
 </Card>
 
 **Project specifications:**
@@ -53,20 +53,26 @@ A piezo buzzer driven by Timer1 in CTC mode with hardware toggle on the OC1A pin
 
 | Ref | Component | Quantity | Notes |
 |-----|-----------|----------|-------|
-| 1 | Arduino Nano or Uno (ATmega328P) | 1 | From previous lessons |
-| 2 | Breadboard | 1 | From previous lessons |
-| 3 | Piezo buzzer (passive) | 1 | Must be passive, not active |
-| 4 | Push buttons (tactile) | 2 | Reuse 1 from Lesson 2, add 1 new |
+| 1 | Arduino Nano or Uno (ATmega328P) | 1 | Already in your kit |
+| 2 | Breadboard | 1 | Already in your kit |
+| 3 | Piezo buzzer (passive) | 1 | Passive: it plays the frequency you give it. An active buzzer plays only its own tone |
+| 4 | Push buttons (tactile) | 2 | Reuse 1 from the electronic dice, add 1 new |
 | 5 | Jumper wires | ~8 | Male-to-male |
 
-![Arduino Nano with piezo buzzer and two push buttons on breadboard](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-Buzzer-Buttons.png)
+![Wiring on an Arduino Nano: a piezo buzzer from D9 to GND, and two push buttons from D6 and D7 to GND](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-Buzzer-Buttons.png)
 
 ## Timer Architecture Overview
 
 <InArticleAd />
 
 
-The timer subsystem takes the system clock, divides it through a prescaler, and feeds the result into a counter register. When the counter reaches a compare value or overflows, it can trigger actions like toggling an output pin or firing an interrupt.
+A timer has three parts, and each one solves a problem:
+
+1. The counter (register TCNTn, where n is the timer number) adds 1 on every tick of its clock. Counting ticks of a known length is how hardware measures time.
+2. The prescaler slows the ticks. The system clock ticks 16 million times a second, so a counter fed directly from it is full in a few milliseconds. The prescaler passes on only every 8th, 64th, 256th or 1024th tick.
+3. The compare register (OCRnA) holds a number you choose. When the counter equals it, the hardware acts: it switches a pin, or raises an interrupt (a signal that makes the processor run a piece of your code).
+
+A counter that passes its largest value starts again at 0. This is called overflow.
 
 ```mermaid
 flowchart TD
@@ -77,7 +83,7 @@ flowchart TD
     D -->|overflow| F["Overflow\ninterrupt/flag"]
 ```
 
-Each timer in the ATmega328P is a hardware counter clocked by the system clock (or a prescaled version of it). Timer0 and Timer2 are 8-bit (count 0 to 255), while Timer1 is 16-bit (count 0 to 65535). The timer increments on each clock tick and can trigger actions when it reaches specific values.
+Timer0 and Timer2 are 8-bit: they count from 0 to 255. Timer1 is 16-bit and counts from 0 to 65,535, so it can time longer intervals and set a frequency in finer steps. Each timer has two compare registers, A and B, and each compare register has its own output pin. The last column lists features that later lessons use.
 
 | Timer | Width | Compare Channels | PWM Pins | Special Features |
 |-------|-------|-------------------|----------|-----------------|
@@ -86,6 +92,8 @@ Each timer in the ATmega328P is a hardware counter clocked by the system clock (
 | Timer2 | 8-bit | OCR2A, OCR2B | OC2A (PB3), OC2B (PD3) | Async mode with external 32 kHz crystal |
 
 ### Timer Modes
+
+The mode decides where the counter turns back and what the output pin does. This lesson uses CTC. MAX is the largest value the counter can hold.
 
 | Mode | How It Works | Use Case |
 |------|-------------|----------|
@@ -96,7 +104,9 @@ Each timer in the ATmega328P is a hardware counter clocked by the system clock (
 
 ### Prescaler Options
 
-The prescaler divides the system clock before it reaches the timer counter. A 16 MHz clock with prescaler 8 gives a 2 MHz timer tick, meaning each count takes 0.5 microseconds. Larger prescalers allow longer intervals but reduce resolution. For a broader look at how counters, prescalers, and frequency dividers work at the digital logic level, see [Digital Electronics: Counters, Timers, and Dividers](/education/digital-electronics/counters-timers-dividers/).
+Without a prescaler, each count lasts 62.5 nanoseconds. An 8-bit timer is then full after 16 microseconds, and the 16-bit timer after 4.1 ms. Neither can time a tenth of a second. With prescaler 8 the timer clock is 16 MHz / 8 = 2 MHz, so each count lasts 0.5 microseconds and Timer1 is full after 32.8 ms.
+
+The price is resolution: a larger prescaler makes each count longer, so times and frequencies can be set only in coarser steps. Choose the smallest prescaler whose longest period covers what you need. In the table, us means microseconds. To see how prescalers are built from logic, read [Digital Electronics: Counters, Timers, and Dividers](/education/digital-electronics/counters-timers-dividers/).
 
 | Prescaler | Timer Clock (at 16 MHz) | Tick Period | 8-bit Max Period | 16-bit Max Period |
 |-----------|------------------------|-------------|-------------------|-------------------|
@@ -111,11 +121,9 @@ The prescaler divides the system clock before it reaches the timer counter. A 16
 <InArticleAd />
 
 
-In CTC mode, the timer counts from 0 to the value in OCRnA, then resets. If you configure the output compare pin to toggle on each match, you get a square wave.
+CTC means Clear Timer on Compare. The counter counts from 0 up to the value in OCRnA and then starts again at 0. If you also tell the hardware to toggle (invert) the output pin at each match, the pin produces a square wave, and a square wave on a buzzer is a tone. A smaller compare value means a shorter count, so the pitch is higher.
 
 ```text
-  CTC mode waveform (toggle on compare match):
-
   TCNTn
     ^
     |     /|    /|    /|    /|
@@ -128,56 +136,62 @@ In CTC mode, the timer counts from 0 to the value in OCRnA, then resets. If you 
     ____      ____      ____
    |    |    |    |    |    |
    |    |____|    |____|    |___
-         ^         ^
-      one period = 2*(1+OCRnA) ticks
+   |<------->|
+   one period = 2*(1+OCRnA) ticks
 ```
 
-The frequency of that square wave is:
+Two details set the formula. The counter passes through the values 0 to OCR1A, which is 1 + OCR1A ticks. And the pin changes once at each match, so one full wave (high, then low) needs two matches. The output frequency in hertz is therefore the timer clock divided by 2 × (1 + OCR1A):
 
 ```
 f_out = F_CPU / (2 * prescaler * (1 + OCR1A))
 ```
 
-Solving for OCR1A:
+`F_CPU` is the system clock in hertz and `prescaler` is the division you chose. Solving for OCR1A:
 
 ```
 OCR1A = (F_CPU / (2 * prescaler * f_out)) - 1
 ```
 
-For example, to generate 440 Hz (concert A) with prescaler 8:
+For example, to generate 440 Hz (the note A4) with prescaler 8:
 
 ```
-OCR1A = (16000000 / (2 * 8 * 440)) - 1 = 2272
+OCR1A = (16000000 / (2 * 8 * 440)) - 1
+      = (16000000 / 7040) - 1
+      = 2272.7 - 1 = 2271.7, rounded to 2272
 ```
+
+OCR1A holds only whole numbers, so the real tone is 16000000 / (2 × 8 × 2273) = 439.95 Hz. The error is too small to hear.
 
 ## Semitone Frequency Table
 
 <InArticleAd />
 
 
-Musical notes follow an exponential scale where each semitone is the previous frequency multiplied by the twelfth root of 2 (approximately 1.0595). The table below gives OCR1A values for two octaves starting from Middle C, calculated with prescaler 8.
+Each semitone is the frequency of the note before it multiplied by the twelfth root of 2 ($\sqrt[12]{2} \approx 1.0595$), so 12 semitones, one octave, double the frequency. The table gives the OCR1A values from Middle C (C4) upward, calculated with prescaler 8 from the exact frequencies (for example C4 = 261.63 Hz). The frequency column is rounded to the nearest hertz.
 
 | Note | Frequency (Hz) | OCR1A (prescaler 8) |
 |------|----------------|---------------------|
-| C4 | 262 | 3816 |
+| C4 | 262 | 3821 |
 | C#4 | 277 | 3607 |
-| D4 | 294 | 3400 |
+| D4 | 294 | 3404 |
 | D#4 | 311 | 3213 |
-| E4 | 330 | 3029 |
+| E4 | 330 | 3033 |
 | F4 | 349 | 2862 |
 | F#4 | 370 | 2702 |
 | G4 | 392 | 2550 |
-| G#4 | 415 | 2406 |
+| G#4 | 415 | 2407 |
 | A4 | 440 | 2272 |
 | A#4 | 466 | 2144 |
-| B4 | 494 | 2023 |
+| B4 | 494 | 2024 |
 | C5 | 523 | 1910 |
-| C6 | 1047 | 954 |
+| C6 | 1047 | 955 |
 
 ## Complete Firmware
 
 <InArticleAd />
 
+
+Two registers configure Timer1. In `TCCR1A`, the bit `COM1A0` makes the timer toggle pin OC1A. In `TCCR1B`, `WGM12` selects CTC mode and `CS11` selects prescaler 8, which also starts the counter. After that, the main loop only reads the buttons and writes a new value to `OCR1A`.
 
 ```c
 #define F_CPU 16000000UL
@@ -187,11 +201,11 @@ Musical notes follow an exponential scale where each semitone is the previous fr
 
 /* OCR1A values for C4 to C6 (25 semitones, prescaler 8) */
 static const uint16_t notes[] = {
-    3816, 3607, 3400, 3213, 3029, 2862,  /* C4  to F4  */
-    2702, 2550, 2406, 2272, 2144, 2023,  /* F#4 to B4  */
-    1910, 1803, 1702, 1607, 1516, 1431,  /* C5  to F5  */
+    3821, 3607, 3404, 3213, 3033, 2862,  /* C4  to F4  */
+    2702, 2550, 2407, 2272, 2144, 2024,  /* F#4 to B4  */
+    1910, 1803, 1702, 1606, 1516, 1431,  /* C5  to F5  */
     1350, 1275, 1203, 1135, 1072, 1011,  /* F#5 to B5  */
-    954                                    /* C6         */
+    955                                    /* C6         */
 };
 
 #define NUM_NOTES (sizeof(notes) / sizeof(notes[0]))
@@ -251,18 +265,18 @@ int main(void)
 <InArticleAd />
 
 
-Setting COM1A0 in TCCR1A tells the hardware to toggle the OC1A pin every time TCNT1 matches OCR1A. The timer automatically resets to 0 (CTC mode), and the cycle repeats. This produces a square wave with a period of 2 * (1 + OCR1A) timer ticks. The CPU does not need to execute any code for the tone to keep playing; it only intervenes when you change the frequency.
+Once the two registers are set, the hardware toggles OC1A at every match and returns the counter to 0, without any code. This is why the tone stays steady while the program waits 50 ms in the debounce delay.
 
 ## PWM Mode Preview
 
 <InArticleAd />
 
 
-CTC mode generates precise frequencies, but timers can also produce variable-width pulses. PWM (Pulse Width Modulation) is a technique where you rapidly switch a digital pin on and off at a fixed frequency, varying the fraction of time it stays on (the "duty cycle") to control the average power delivered to a load. Fast PWM mode uses the same counter and compare registers, but instead of toggling the pin at each match, it controls how long the pin stays high within each cycle. You will use this extensively in later lessons for motor control and LED dimming.
+A digital pin is only fully on or fully off, so it cannot dim an LED or slow a motor directly. Pulse width modulation (PWM) switches the pin on and off at a fixed frequency, too fast to see, and changes the fraction of each cycle that the pin is on. That fraction is the duty cycle, and it sets the average power the load receives.
+
+Fast PWM mode uses the same counter and compare register. The counter always runs to MAX. The pin goes high when the counter starts at 0 and low at the compare match, so the compare value now sets the width of the pulse, not the frequency.
 
 ```text
-  Fast PWM waveform:
-
   TCNTn
     ^
  MAX|    /|    /|    /|
@@ -277,10 +291,10 @@ CTC mode generates precise frequencies, but timers can also produce variable-wid
    |   | |   | |   |
    |   |_|   |_|   |_______
     <-->
-    duty = OCRnA / MAX
+    duty ~ OCRnA / MAX
 ```
 
-The duty cycle controls the average voltage. You will use PWM extensively in later lessons for analog-like outputs.
+The exact fast PWM duty cycle is $(\text{OCRnA} + 1) / (\text{MAX} + 1)$, so OCR0A = 127 on an 8-bit timer gives $128 / 256 = 50\%$. Later lessons use PWM for motor speed and LED dimming.
 
 ```c
 /* Example: Fast PWM on Timer0, ~62.5 kHz, 50% duty */
@@ -291,7 +305,7 @@ DDRD |= (1 << PD6);    /* OC0A output */
 ```
 
 :::tip[Instrument it]
-Run a timer the other way, as a counter or input-capture instead of a tone source, and it becomes a measuring instrument. Feed it pulses from a Hall sensor watching a magnet on a shaft, or from an IR sensor and a slotted disc, and it counts revolutions: a tachometer. The same trick on a flow meter's pulse output reads litres per minute. An [ATmega](/education/sensor-actuator-interfacing-stm32/) measures it, and an [ESP32 or STM32 link](/education/iot-systems/) can [log RPM or flow](https://siliconwit.io) to catch a belt slipping or a pump losing prime.
+A timer can also count pulses that come from outside, and then it is a measuring instrument. Give it the pulses of a Hall sensor that watches a magnet on a shaft, and it counts revolutions: a tachometer. The same method on the pulse output of a flow meter reads litres per minute. An [ATmega](/education/sensor-actuator-interfacing-stm32/) measures it, and an [ESP32 or STM32 link](/education/iot-systems/) can [log RPM or flow](https://siliconwit.io) to catch a belt slipping or a pump losing prime.
 :::
 
 ## Exercises
@@ -309,7 +323,7 @@ Run a timer the other way, as a counter or input-capture instead of a tone sourc
 <InArticleAd />
 
 
-You now understand how the ATmega328P timers work at the register level. You can configure CTC mode for precise frequency generation, calculate OCR values from a target frequency, and use hardware output compare to generate signals without CPU intervention. The prescaler and compare value together determine the output frequency with a simple formula. These concepts carry directly into PWM, input capture, and interrupt-driven timing in the lessons ahead.
+A timer is a counter that hardware advances, a prescaler that slows its ticks, and a compare register that acts when the counter reaches your number. In CTC mode with a toggling pin, the prescaler and OCR1A together set the frequency, and the tone continues with no code running. The same three parts produce PWM and the timed interrupts of the next lessons.
 
 <EmbeddedProgrammingAtmega328pComments />
 
