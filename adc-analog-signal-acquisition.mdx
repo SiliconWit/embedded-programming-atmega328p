@@ -34,7 +34,7 @@ A sensor sits still on the bench, and the number your program reads from it jump
 ## What We Are Building
 
 <Card title="Light-Tracking Indicator" icon="star">
-Two LDRs (light-dependent resistors, parts whose resistance falls when light shines on them) sit side by side. Each one feeds its own ADC input pin. The firmware reads both pins, averages 16 readings of each to remove noise, and draws two horizontal bars on the OLED display. An arrow in the center points to the brighter side. The display updates about 20 times a second.
+Two LDRs (light-dependent resistors, parts whose resistance falls when light shines on them) sit side by side, each on its own ADC input pin. The firmware averages 16 readings of each to remove noise and draws two horizontal bars on the OLED display. An arrow in the center points to the brighter side. The display updates about 20 times a second.
 </Card>
 
 **Project specifications:**
@@ -66,9 +66,9 @@ Two LDRs (light-dependent resistors, parts whose resistance falls when light shi
 <InArticleAd />
 
 
-A digital pin can only tell high from low. A light sensor gives every voltage in between, so the chip needs a ruler for voltage. The ADC is that ruler. It has 1024 marks, numbered 0 to 1023, spread evenly from 0 V up to a voltage that you choose, called the reference. It returns the mark just below the input voltage.
+A digital pin can only tell high from low, but a light sensor gives every voltage in between, so the chip needs a ruler for voltage: the ADC. It has 1024 marks, numbered 0 to 1023, spread evenly from 0 V up to a voltage you choose, the reference, and it returns the mark just below the input.
 
-The chip has one ADC, shared by several pins. A switch called the multiplexer (MUX) connects one pin at a time, and a small capacitor holds a sample of that voltage still while it is measured.
+The one ADC is shared by several pins. A switch called the multiplexer (MUX) connects one pin at a time, and a small capacitor holds a sample of that voltage still while it is measured.
 
 ```text
   The path of one reading:
@@ -89,9 +89,9 @@ The chip has one ADC, shared by several pins. A switch called the multiplexer (M
                                 result 0 to 1023
 ```
 
-The converter finds the number by successive approximation, a guessing game played in halves. With a 5 V reference and 3.2 V at the pin, it first tries 2.5 V: the input is higher, so that half is kept. It then tries 3.75 V: lower, so that quarter is dropped. Each try gives one bit, and after 10 tries the result is 655.
+The converter finds the number by successive approximation, a guessing game played in halves. With a 5 V reference and 3.2 V at the pin, it tries 2.5 V (the input is higher: keep that half), then 3.75 V (lower: drop that quarter). Each try gives one bit; after 10 tries the result is 655.
 
-So three questions must be answered before a reading: which pin, compared with what reference, and how fast the tries run. Each answer is a group of bits in a register.
+So a reading needs three answers, each a group of bits in a register: which pin, against what reference, and how fast the tries run.
 
 | Register | Purpose |
 |----------|---------|
@@ -120,7 +120,7 @@ Never apply a voltage higher than the selected reference to an ADC pin. With AVc
 
 ### ADC Clock and Prescaler
 
-Each try needs time for the voltages inside the converter to settle. If the tries come too fast, the last bits are wrong. So the ADC has its own slow clock, made by dividing the system clock with a prescaler.
+Each try needs time for the voltages inside the converter to settle; if the tries come too fast, the last bits are wrong. So the ADC has its own slow clock, the system clock divided by a prescaler.
 
 For full 10-bit resolution that clock must be between 50 kHz and 200 kHz. With a 16 MHz system clock, prescaler 128 gives $16\,\text{MHz} / 128 = 125\,\text{kHz}$. One conversion takes 13 ADC clock cycles (25 for the first one after enabling), so a reading takes $13 / 125\,\text{kHz} = 104$ microseconds.
 
@@ -175,7 +175,7 @@ static uint16_t adc_read(uint8_t channel)
 <InArticleAd />
 
 
-The driver above stops the program for 104 microseconds at every reading. In free-running mode the ADC starts a new conversion by itself as soon as the last one finishes, and the program reads the newest result with no wait. You enable it by setting ADATE (auto-trigger enable) in ADCSRA and selecting free-running as the trigger source in ADCSRB (ADTS2:0 = 000). The ADC then stays on one pin. This project reads two pins in turn, so it uses single conversions.
+The driver above stops the program for 104 microseconds at every reading. In free-running mode the ADC starts a new conversion by itself as soon as the last one ends, and the program reads the newest result with no wait. Enable it by setting ADATE (auto-trigger enable) in ADCSRA and selecting free-running as the trigger source in ADCSRB (ADTS2:0 = 000). The ADC then stays on one pin. This project reads two pins in turn, so it uses single conversions.
 
 ```c
 static void adc_init_freerun(uint8_t channel)
@@ -198,7 +198,7 @@ static uint16_t adc_read_freerun(void)
 <InArticleAd />
 
 
-ADC readings are noisy, especially on a breadboard with long wires and a USB power supply. The input does not move, but each reading lands a few steps above or below the true value. Oversampling means taking extra readings and averaging them, so that the errors above and below cancel.
+ADC readings are noisy, especially on a breadboard with long wires and a USB supply: the input does not move, but each reading lands a few steps above or below the true value. Oversampling takes extra readings and averages them, so the errors above and below cancel.
 
 ```text
   Effect of oversampling (16 samples):
@@ -210,7 +210,7 @@ ADC readings are noisy, especially on a breadboard with long wires and a USB pow
   Average: 511 (clean)
 ```
 
-Random noise falls by the square root of the number of samples, not by the number itself. So 16 samples make the noise 4 times smaller, which is worth about 2 extra bits. The cost is time: 16 conversions take $16 \times 104\,\mu\text{s} \approx 1.7$ milliseconds. An error that is the same in every reading, such as a wrong reference voltage, stays in the average.
+Random noise falls by the square root of the number of samples, not by the number itself: 16 samples make it 4 times smaller, worth about 2 extra bits. The cost is time: 16 conversions take $16 \times 104\,\mu\text{s} \approx 1.7$ milliseconds. An error that is the same in every reading, such as a wrong reference voltage, stays in the average.
 
 ```c
 #define OVERSAMPLE_COUNT 16
@@ -230,7 +230,7 @@ static uint16_t adc_read_averaged(uint8_t channel)
 <InArticleAd />
 
 
-The ADC measures voltage, but an LDR changes its resistance. A voltage divider turns one into the other: two resistors in series share the supply voltage in proportion to their resistances, and the ADC pin reads the point between them. Each LDR is paired with a fixed 10K resistor.
+The ADC measures voltage, but an LDR changes its resistance. A voltage divider turns one into the other: two resistors in series share the supply in proportion to their resistances, and the ADC pin reads the point between them. Each LDR is paired with a fixed 10K resistor.
 
 ```text
   Dual LDR circuit:
@@ -394,7 +394,7 @@ int main(void)
 <InArticleAd />
 
 
-Part of the noise comes from the chip itself: the running processor disturbs the supply of the ADC. In ADC Noise Reduction sleep mode the processor stops for the length of one conversion. The ADC keeps working, and its interrupt wakes the processor when the conversion ends. Use it when averaging alone does not give a steady reading.
+Part of the noise comes from the chip itself: the running processor disturbs the supply of the ADC. In ADC Noise Reduction sleep mode the processor stops for one conversion while the ADC keeps working, and its interrupt wakes the processor at the end. Use it when averaging alone does not give a steady reading.
 
 ```c
 #include <avr/sleep.h>

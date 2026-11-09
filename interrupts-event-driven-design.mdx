@@ -27,14 +27,14 @@ import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
-A program that reads a button once in each pass of its loop is polling. If the loop is busy for 20 ms, a 2 ms pulse comes and goes unseen. To miss nothing, the program must check all the time and do no other work. With an interrupt, the hardware watches the event and makes the processor run a short piece of your code at the moment it happens. In this lesson a button interrupt and a timer interrupt make a reaction time tester: an LED lights at a random moment, you press a button, and the board reports your reaction time in milliseconds. #Interrupts #ISR #EventDriven
+A program that reads a button once in each pass of its loop is polling. If the loop is busy for 20 ms, a 2 ms pulse comes and goes unseen; to miss nothing, the program must check all the time and do no other work. With an interrupt, the hardware watches the event and makes the processor run a short piece of your code the moment it happens. Here a button interrupt and a timer interrupt make a reaction time tester: an LED lights at a random moment, you press a button, and the board reports your reaction time in milliseconds. #Interrupts #ISR #EventDriven
 
 <PodcastEmbed src="https://open.spotify.com/episode/6TNUlZqNPsXlYCVHUrP6Ng?si=jMPyQDM_Q9SaDHcOUcBbtg" />
 
 ## What We Are Building
 
 <Card title="Reaction Time Tester" icon="star">
-The firmware waits a random time (1 to 5 seconds) and lights an LED. A Timer1 interrupt counts milliseconds the whole time. When you press the button, an external interrupt (INT0) sets a flag, and the main loop subtracts two readings of the millisecond counter. The result goes to your computer as text over the USB serial link (the UART, which has its own lesson) at 9600 baud. A press before the LED is reported as a false start. The button pin is never polled.
+The firmware waits a random time (1 to 5 seconds) and lights an LED, while a Timer1 interrupt counts milliseconds. Your press fires an external interrupt (INT0) that sets a flag, and the main loop subtracts two readings of the millisecond counter. The result goes to your computer as text over the USB serial link (the UART, which has its own lesson) at 9600 baud. A press before the LED is a false start. The button pin is never polled.
 </Card>
 
 **Project specifications:**
@@ -71,7 +71,7 @@ The LED is the onboard LED on PB5, and the serial text goes through the board's 
 
 Polling is like walking to the door every minute to see if someone is there. An interrupt is a doorbell: you do your work, and when the bell rings you stop, answer the door, and return to exactly where you were. The comparison stops being true in one way: by default the chip answers one bell at a time, and other interrupts wait until the first is finished.
 
-The code that answers is the interrupt service routine (ISR). The chart shows what the processor does by itself. Three words in it need a meaning. The program counter (PC) is the address of the next instruction, and it is saved on the stack, an area of SRAM, so the processor can return. The vector is a fixed address in flash that holds a jump to your ISR. IRQ means interrupt request.
+The code that answers is the interrupt service routine (ISR). The chart shows what the processor does by itself, in three terms: the program counter (PC) is the address of the next instruction, saved on the stack, an area of SRAM, so the processor can return. The vector is a fixed address in flash that holds a jump to your ISR. IRQ means interrupt request.
 
 ```mermaid
 flowchart TD
@@ -88,7 +88,7 @@ The jump to the vector takes at least 4 clock cycles, which is 0.25 microseconds
 
 ### Interrupt Types on ATmega328P
 
-This lesson uses three kinds. On the pins INT0 and INT1 you choose the edge that fires the interrupt: a falling edge is the moment the pin goes from high to low, as when a button to ground is pressed. Pin-change interrupts work on every pin but fire on any change. Timer interrupts come from inside the chip. The last column names the registers that configure each one.
+This lesson uses three kinds. On INT0 and INT1 you choose the edge that fires: a falling edge is the moment the pin goes from high to low, as when a button to ground is pressed. Pin-change interrupts work on every pin but fire on any change. Timer interrupts come from inside the chip. The last column names the registers that configure each.
 
 | Type | Triggers | Pins | Register |
 |------|----------|------|----------|
@@ -124,7 +124,7 @@ The vectors form a table at the start of flash, one entry for each interrupt sou
   0x0026   USART_UDRE       USART_UDRE_vect
 ```
 
-An interrupt fires only when three switches are all on, and each has its own line in the code below:
+An interrupt fires only when three switches in a row are all on, each set by its own line below:
 
 1. The trigger. Two bits in register EICRA choose what on the INT0 pin counts as an event: low level (00), any change (01), falling edge (10), or rising edge (11).
 2. The enable bit of this one interrupt, in register EIMSK.
@@ -145,7 +145,7 @@ sei();                     /* Global interrupt enable */
 An ISR can run between any two instructions of the main code. Three rules prevent the faults this causes:
 
 - Keep the ISR short. While it runs, all other interrupts wait. Set a flag or store a value, and let the main loop do the slow work, such as sending text.
-- Declare every variable that the ISR and the main code share as `volatile`. The compiler cannot see that an ISR changes it, so without this word it may read the variable once and reuse the old value for ever.
+- Declare every variable that the ISR and the main code share as `volatile`. The compiler cannot see that an ISR changes it, so without this word it may read the variable once into a register and check that old copy for ever.
 - Read a shared variable of more than one byte inside an atomic block, explained at the end of this lesson.
 
 The example shows the form of an ISR. It stores TCNT1, the counter register of Timer1. The ISR of the complete firmware only sets the flag.
@@ -169,11 +169,11 @@ ISR(INT0_vect)
 <InArticleAd />
 
 
-To time a reaction, the program needs a clock that counts milliseconds. Timer1 runs in CTC mode, the mode of the tone generator, where the counter returns to 0 when it reaches OCR1A. Here the match does not toggle a pin. It raises an interrupt, and the ISR adds 1 to a variable.
+To time a reaction, the program needs a millisecond clock. Timer1 runs in CTC mode, as in the tone generator, where the counter returns to 0 at OCR1A; here the match raises an interrupt in place of toggling a pin, and the ISR adds 1 to a variable.
 
-The numbers: with prescaler 64 the timer clock is 16,000,000 / 64 = 250,000 Hz, so one count lasts 4 microseconds. With OCR1A = 249 the counter passes through 250 values (0 to 249), and 250 × 4 microseconds = 1 ms exactly. So the ISR runs 1,000 times a second.
+With prescaler 64 the timer clock is 16,000,000 / 64 = 250,000 Hz, so one count lasts 4 microseconds. With OCR1A = 249 the counter passes through 250 values (0 to 249): 250 × 4 microseconds = 1 ms exactly, so the ISR runs 1,000 times a second.
 
-`ms_counter` is 16-bit, so it returns to 0 after 65,535 ms. The firmware subtracts two readings, and unsigned subtraction stays correct across that return for any interval under 65 seconds.
+`ms_counter` is 16-bit and returns to 0 after 65,535 ms. The firmware subtracts two readings, and unsigned subtraction stays correct across that return for any interval under 65 seconds.
 
 ```c
 volatile uint16_t ms_counter = 0;
@@ -384,7 +384,7 @@ ISR(PCINT0_vect)
 <InArticleAd />
 
 
-The ATmega328P is an 8-bit processor, so it reads a 16-bit variable in two steps, one byte at a time. An interrupt can arrive between the two steps. Then the main code holds one byte from before the ISR and one from after it. In the chart the counter goes from 0x00FF (255) to 0x0100 (256), and the main code reads 0x01FF, which is 511.
+The 8-bit ATmega328P reads a 16-bit variable in two steps, one byte at a time. If an interrupt arrives between them, the main code holds one byte from before the ISR and one from after it. In the chart the counter goes from 0x00FF (255) to 0x0100 (256), and the main code reads 0x01FF, which is 511.
 
 ```mermaid
 sequenceDiagram
@@ -399,7 +399,7 @@ sequenceDiagram
     Note over M: Result: 0x01FF (corrupt!)<br/>ATOMIC_BLOCK prevents this
 ```
 
-The fault is rare, so it passes every test on the bench and appears weeks later. `ATOMIC_BLOCK` from `util/atomic.h` switches interrupts off for the few instructions of the read and then restores them, so both bytes belong to the same value. A one-byte variable such as `button_flag` is read in one step and does not need it.
+The fault is rare, so it passes every bench test and appears weeks later. `ATOMIC_BLOCK` from `util/atomic.h` switches interrupts off for the few instructions of the read, then restores them, so both bytes belong to the same value. A one-byte variable such as `button_flag` is read in one step and does not need it.
 
 ```c
 #include <util/atomic.h>

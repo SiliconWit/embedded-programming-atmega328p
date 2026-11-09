@@ -25,7 +25,7 @@ import { Card, CardGrid, Badge, Steps, LinkButton, FileTree } from '@astrojs/sta
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
-A CNC machine (a machine tool moved by a computer) that misses one step pulse cuts in the wrong place for the rest of the job. The program inside must listen for commands, time every pulse and watch a safety switch, all on one small processor, and no pulse may be late. This lesson builds a controller for one axis of such a machine. It takes movement commands over the serial port, times the step pulses with a timer, finds its zero position with a limit switch, and lets you move the axis by hand with a potentiometer. It uses the peripherals of the whole course in one program. #StepperMotor #CNC #MotionControl
+A CNC machine (a machine tool moved by a computer) that misses one step pulse cuts in the wrong place for the rest of the job. The program inside must listen for commands, time every pulse and watch a safety switch, all on one small processor, and no pulse may be late. This lesson builds a controller for one axis of such a machine, using the peripherals of the whole course in one program: it takes movement commands over the serial port, times the step pulses with a timer, finds its zero position with a limit switch, and lets you move the axis by hand with a potentiometer. #StepperMotor #CNC #MotionControl
 
 ## What We Are Building
 
@@ -75,9 +75,9 @@ No peripheral here is new. Each has one job:
 <InArticleAd />
 
 
-A stepper motor does not spin freely like a fan motor. It turns in small fixed steps, 200 to a full turn here, and holds its position between steps. Count the steps you send and you know the position, with no sensor on the shaft.
+A stepper motor does not spin freely like a fan motor. It turns in small fixed steps, 200 to a full turn here, and holds its position between steps, so counting the steps you send gives the position, with no sensor on the shaft.
 
-An MCU pin cannot drive the motor coils: a pin is good for 20 mA, and a coil needs 1 A or more from a 12 V supply. The driver module (A4988 or DRV8825) stands between the two. It needs only two logic signals. Each rising edge on STEP moves the motor one step, and the level on DIR chooses the direction.
+An MCU pin cannot drive the motor coils: a pin is good for 20 mA, and a coil needs 1 A or more from a 12 V supply. The driver module (A4988 or DRV8825) between the two needs only two logic signals: each rising edge on STEP moves the motor one step, and the level on DIR chooses the direction.
 
 ```text
   ATmega328P            A4988 Driver         NEMA 17
@@ -118,9 +118,9 @@ Never connect or disconnect the motor while the 12 V supply is on. It can destro
 <InArticleAd />
 
 
-The number of pulses sets the distance, and the number of pulses per second sets the speed. So the program must turn millimeters into pulses, and millimeters per minute into a timer setting.
+The number of pulses sets the distance, and pulses per second set the speed, so the program turns millimeters into pulses and millimeters per minute into a timer setting.
 
-The motor turns a leadscrew, a threaded rod that moves the axis as it turns. Its pitch is the distance the axis moves in one turn. With 200 steps per turn and a pitch of 8 mm (common on 3D printers), one millimeter needs $200 / 8 = 25$ steps.
+The motor turns a leadscrew, a threaded rod that moves the axis as it turns; its pitch is the distance moved in one turn. With 200 steps per turn and a pitch of 8 mm (common on 3D printers), one millimeter needs $200 / 8 = 25$ steps.
 
 CNC machines give speed as a feedrate F in mm per minute. Divide by 60 for mm per second, then multiply by the steps in one millimeter:
 
@@ -130,17 +130,19 @@ steps_per_second = (F / 60) * steps_per_mm
 
 For $F = 300$ mm/min with 25 steps/mm: $(300 / 60) \times 25 = 125$ steps per second.
 
-Timer1 counts from 0 up to the value in OCR1A, raises an interrupt (a compare match), and starts again from 0. The interrupt routine (ISR) sends one STEP pulse each time, so the interrupt frequency is the step rate. With a 16 MHz clock and prescaler 64 the timer makes 250,000 counts per second, and:
+Timer1 counts from 0 up to OCR1A, raises an interrupt (a compare match), and starts again from 0. The interrupt routine (ISR) sends one STEP pulse each time, so the interrupt frequency is the step rate. With a 16 MHz clock and prescaler 64 the timer makes 250,000 counts per second, and:
 
 ```
 OCR1A = (F_CPU / (prescaler * steps_per_second)) - 1
 ```
 
-For 125 steps per second: $\text{OCR1A} = 16\,000\,000 / (64 \times 125) - 1 = 1999$. The minus 1 is there because the count starts at 0. There is no factor of 2 as in the tone generator, because the ISR does not toggle the pin: each compare match is one full step.
+For 125 steps per second: $\text{OCR1A} = 16\,000\,000 / (64 \times 125) - 1 = 1999$. The minus 1 is there because the count starts at 0. Unlike the tone generator there is no factor of 2: the ISR does not toggle the pin, so each compare match is one full step.
 
 At 3000 mm/min the rate is 1250 steps per second and OCR1A = 199. With prescaler 64, the 16-bit range of Timer1 covers speeds from about 4 steps/s ($250\,000 / 65\,536 \approx 3.8$) up to tens of thousands of steps/s.
 
-The controller never measures where the axis is. It counts the pulses it has sent, which is called open-loop control. If the motor misses steps under a heavy load, the count is wrong and the controller does not know.
+The controller never measures where the axis is; it counts the pulses it has sent, which is called open-loop control. If the motor misses steps under a heavy load, the count is wrong and the controller does not know, like a person who counts steps in the dark.
+
+`timer1_start()` cuts the step rate and OCR1A to whole numbers, so 10 mm/min at 25 steps/mm really runs at 9.6 mm/min.
 
 ## G-code Parser
 
@@ -165,7 +167,7 @@ The parser, the part of the program that reads a command, takes one line from th
 <InArticleAd />
 
 
-The program is long, but it is made of blocks you already know. Read the Timer1 ISR first. All motion happens there, one step for each interrupt, while the rest of the program only sets a target and waits.
+The program is long, but made of blocks you already know. Read the Timer1 ISR first: all motion happens there, one step per interrupt, while the rest of the program only sets a target and waits.
 
 ```c
 #define F_CPU 16000000UL
@@ -607,10 +609,10 @@ flowchart TD
 Work that must happen on time is done by hardware and interrupts, and work that can wait is done in the main loop:
 
 - Timer1 owns the step timing. Its ISR is short (pulse the pin, update the count, check the target), so it finishes long before the next step is due.
-- INT0 answers the limit switch at once. Even while the main loop waits for UART input, the interrupt fires and its ISR sets `limit_hit`.
-- UART talks to the person at the PC. The main loop stops and waits in `uart_readline()`. That is acceptable because Timer1 and INT0 do not depend on the main loop.
-- The ADC is read only in jog mode, by polling. It needs no interrupt, because jog steps are made in the main loop.
-- EEPROM keeps the calibration when power is off. `eeprom_update_float` writes only if the value changed, which saves write cycles.
+- INT0 answers the limit switch at once: even while the main loop waits for UART input, its ISR sets `limit_hit`.
+- UART talks to the person at the PC. The main loop waits in `uart_readline()`, which is acceptable because Timer1 and INT0 do not depend on the main loop.
+- The ADC is read only in jog mode, by polling; it needs no interrupt, because jog steps are made in the main loop.
+- EEPROM keeps the calibration when power is off; `eeprom_update_float` writes only if the value changed, which saves write cycles.
 - GPIO sets the direction before each move and makes the step pulse (high, then low) inside the ISR.
 
 :::tip[Instrument it]
@@ -661,7 +663,7 @@ Connect via a serial terminal at 115200 baud. Try these commands in order:
 <InArticleAd />
 
 
-The default 25 steps/mm assumes a 200-step motor with an 8 mm pitch leadscrew. If your machine differs, every move is too long or too short by the same ratio. To calibrate:
+The default 25 steps/mm assumes a 200-step motor and an 8 mm pitch leadscrew; on another machine every move is too long or too short by the same ratio. To calibrate:
 
 <Steps>
 1. Home the axis: `G28`

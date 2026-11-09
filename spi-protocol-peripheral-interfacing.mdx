@@ -27,14 +27,14 @@ import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedd
 
 import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 
-You wire a new display, load the program, and the screen stays black, or fills with random dots. The cause is usually the clock setting of the bus, one control pin at the wrong level, or a missing command. This lesson covers SPI (Serial Peripheral Interface), the fast bus used by displays, SD cards and many sensors, so that you can find each cause. You will write a driver for the SSD1306 OLED display and build a clock on its 128x64 pixel screen. #SPI #OLED #SSD1306
+You wire a new display, load the program, and the screen stays black, or fills with random dots. The cause is usually the clock setting of the bus, one control pin at the wrong level, or a missing command. This lesson covers SPI (Serial Peripheral Interface), the fast bus of displays, SD cards and many sensors, so that you can find each cause. You write a driver for the SSD1306 OLED display and build a clock on its 128x64 pixel screen. #SPI #OLED #SSD1306
 
 <PodcastEmbed src="https://open.spotify.com/episode/6bS0wM6Tf40uoIb5TgSMmc?si=obsjiz6nQR27C_JsKNKfKQ" />
 
 ## What We Are Building
 
 <Card title="Real-Time Clock on OLED Display" icon="star">
-A 128x64 OLED display driven over SPI shows a running clock (HH:MM:SS). The clock starts at 00:00:00 on power-up and counts seconds with a Timer1 interrupt. The program draws into a 1024-byte copy of the screen in memory, called a framebuffer, and sends it to the display once per second. A 5x7 pixel font holds the digits and the colon.
+A 128x64 OLED display driven over SPI shows a running clock (HH:MM:SS), which starts at 00:00:00 on power-up and counts seconds with a Timer1 interrupt. The program draws into a 1024-byte copy of the screen in memory, a framebuffer, and sends it to the display once per second. A 5x7 pixel font holds the digits and the colon.
 </Card>
 
 **Project specifications:**
@@ -64,7 +64,7 @@ A 128x64 OLED display driven over SPI shows a running clock (HH:MM:SS). The cloc
 <InArticleAd />
 
 
-A serial bus sends bits one after another on one wire, and the receiver must know when one bit ends and the next begins. SPI solves this with a second wire, the clock: the sender puts a bit on the data wire, and one clock pulse tells the receiver "read it now".
+A serial bus sends bits one after another on one wire, so the receiver must know where each bit begins. SPI adds a second wire, the clock: the sender puts a bit on the data wire, and one clock pulse tells the receiver "read it now".
 
 The master, here the ATmega328P, makes the clock and starts every transfer. SPI has four signals: SCK (serial clock), MOSI (master out, slave in), MISO (master in, slave out) and SS (slave select, also called CS, chip select). The master holds SS low to tell one slave "this transfer is for you".
 
@@ -83,15 +83,15 @@ The master, here the ATmega328P, makes the clock and starts every transfer. SPI 
   +------------------+       +-------------------+
 ```
 
-Each device holds an 8-bit shift register, a row of eight cells in which the bits move one place on each clock pulse. On every pulse the master pushes one bit out on MOSI and takes one bit in from MISO, so after eight pulses the two have exchanged one byte. SPI always sends and receives together. This display has nothing to report, so its MISO wire is left out.
+Each device holds an 8-bit shift register, eight cells in which the bits move one place on each clock pulse. On every pulse the master pushes one bit out on MOSI and takes one in from MISO, so after eight pulses the two have exchanged a byte: SPI always sends and receives together. This display has nothing to report, so its MISO wire is left out.
 
 Several slaves can share SCK, MOSI and MISO, but each needs its own SS line. On the Arduino boards, MOSI is D11, MISO is D12, SCK is D13 and SS is D10. For a comparison with I2C and other buses, see [Digital Electronics: Bus Architecture and Interfaces](/education/digital-electronics/bus-architecture-interfaces/).
 
 ### Clock Polarity and Phase
 
-A clock pulse has a rising edge (low to high) and a falling edge. The data wire changes on one edge and is read on the other, when it is steady. Master and slave must agree which is which. If they do not, the slave reads each bit while it changes, and every byte arrives wrong.
+A clock pulse has a rising edge (low to high) and a falling edge. The data wire changes on one edge and is read on the other, when it is steady, and master and slave must agree which is which; if not, the slave reads each bit while it changes, and every byte arrives wrong.
 
-Two bits set the agreement. CPOL (clock polarity) is the level of the clock when nothing is sent. CPHA (clock phase) chooses whether data is read on the first edge of a pulse or the second. That gives four SPI modes:
+Two bits set the agreement: CPOL (clock polarity) is the level of the clock when nothing is sent, and CPHA (clock phase) chooses whether data is read on the first edge of a pulse or the second. That gives four SPI modes:
 
 | SPI Mode | CPOL | CPHA | Clock Idle | Data Sampled On |
 |----------|------|------|------------|-----------------|
@@ -175,7 +175,7 @@ The 7-pin OLED module needs three bus wires (clock, data, chip select) and two t
 <InArticleAd />
 
 
-The SSD1306 is the controller chip on the display module. It holds one bit of memory for each pixel, and you set pixels by writing bytes into that memory. One byte is not a row of 8 pixels, as you might expect, but a column of 8 pixels. So the screen is cut into 8 horizontal bands called pages, each 8 pixels tall and 128 bytes long.
+The SSD1306, the controller chip on the display module, holds one bit of memory for each pixel, and you set pixels by writing bytes into that memory. One byte is not a row of 8 pixels, as you might expect, but a column of 8 pixels, so the screen is cut into 8 horizontal bands called pages, each 8 pixels tall and 128 bytes long.
 
 ```text
   128 columns
@@ -194,9 +194,9 @@ The SSD1306 is the controller chip on the display module. It holds one bit of me
 
 In each byte, bit 0 is the top pixel and bit 7 is the bottom pixel. The whole screen is $128 \times 8 = 1024$ bytes.
 
-The same data wire carries commands (settings such as contrast) and pixel data, and the display cannot tell them apart from the bits. The D/C pin tells it: low for a command, high for pixel data. `oled_cmd()` and `oled_data()` differ only in that level.
+The same data wire carries commands (settings such as contrast) and pixel data, which the display cannot tell apart from the bits. The D/C pin tells it: low for a command, high for pixel data. `oled_cmd()` and `oled_data()` differ only in that level.
 
-`oled_init()` sends a list of commands from the SSD1306 datasheet. You need not remember them, except the charge pump (0x8D, 0x14), which makes the higher voltage the pixels need. A black screen with correct wiring is often a missing charge pump command.
+`oled_init()` sends a list of commands from the SSD1306 datasheet. Remember only the charge pump (0x8D, 0x14), which makes the higher voltage the pixels need. A black screen with correct wiring is often a missing charge pump command.
 
 ```c
 #define OLED_DC   PB1
@@ -266,7 +266,7 @@ static void oled_init(void)
 <InArticleAd />
 
 
-The program cannot read the display memory back, so it cannot change one pixel and keep the others in the same byte. The answer is a framebuffer: a 1024-byte array in RAM with the same layout as the display memory. The program draws into the array, then sends all of it in one transfer, called a flush. The array uses half of the chip's 2048 bytes of RAM.
+The program cannot read the display memory back, so it cannot change one pixel and keep the others in the same byte. The answer is a framebuffer, a 1024-byte array in RAM with the layout of the display memory: the program draws into it, then sends all of it in one transfer, a flush. The array uses half of the chip's 2048 bytes of RAM.
 
 Byte `page * 128 + col` of the array is column `col` of page `page`. A font character is 5 such bytes, one for each of its columns.
 
@@ -329,7 +329,7 @@ static void oled_flush(void)
 <InArticleAd />
 
 
-Timer1 raises an interrupt every millisecond, and its routine counts 1000 of them to make one second. `seconds` is a 32-bit variable, which this 8-bit processor reads one byte at a time, so `ATOMIC_BLOCK` switches interrupts off during the read. Without it, an interrupt in the middle of the read could give a mixed value.
+Timer1 raises an interrupt every millisecond, and its routine counts 1000 of them to make one second. `seconds` is a 32-bit variable, which this 8-bit processor reads one byte at a time, so `ATOMIC_BLOCK` switches interrupts off during the read; without it, an interrupt in the middle of the read could give a mixed value.
 
 ```c
 #define F_CPU 16000000UL
@@ -411,7 +411,7 @@ int main(void)
 <InArticleAd />
 
 
-Every slave has a highest clock it can follow, and long wires lower that limit. The SPI clock is the system clock divided by a number set with the SPI2X bit in SPSR and the SPR1/SPR0 bits in SPCR.
+Every slave has a highest clock it can follow, and long wires lower it. The SPI clock is the system clock divided by a number set with SPI2X in SPSR and SPR1/SPR0 in SPCR.
 
 The SSD1306 accepts up to about 10 MHz, so the default F_CPU/4 (4 MHz) is safe. One byte then takes $8 / 4\,\text{MHz} = 2$ microseconds, and the 1024 bytes of the screen at least 2 milliseconds. For faster transfers, enable SPI2X for F_CPU/2 (8 MHz).
 

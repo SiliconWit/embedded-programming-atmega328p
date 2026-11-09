@@ -34,7 +34,7 @@ A button reads as pressed when nobody touched it. A new line of code for one LED
 ## What We Are Building
 
 <Card title="Electronic Dice" icon="star">
-Press a button and four LEDs show a dice value from 1 to 6. The number comes from a linear feedback shift register (LFSR), a short routine that scrambles a 16-bit number. The contacts of a button bounce for a few milliseconds, so one press looks like several. The program waits 50 ms and reads the button again. That is called debouncing.
+Press a button and four LEDs show a dice value from 1 to 6. The number comes from a linear feedback shift register (LFSR), a short routine that scrambles a 16-bit number. Button contacts bounce for a few milliseconds, so one press looks like several; the program waits 50 ms and reads again. That is called debouncing.
 </Card>
 
 **Project specifications:**
@@ -66,7 +66,7 @@ Press a button and four LEDs show a dice value from 1 to 6. The number comes fro
 <InArticleAd />
 
 
-A general purpose input/output (GPIO) pin can do two opposite jobs. It can drive a voltage out, to light an LED. Or it can listen to a voltage that something outside puts on it, such as a button. So the chip holds three separate facts about each pin, each in a register: a byte inside the chip whose 8 bits are wired to hardware.
+A general purpose input/output (GPIO) pin does one of two opposite jobs: it drives a voltage out, to light an LED, or it listens to a voltage that something outside puts on it, such as a button. So the chip holds three facts about each pin, each in a register, a byte whose 8 bits are wired to hardware. Think of two switches and a lamp per pin: one switch chooses the job, one chooses the level, and the lamp shows the level really on the wire.
 
 | Register | You | What its bit means |
 |----------|-----|---------|
@@ -74,11 +74,9 @@ A general purpose input/output (GPIO) pin can do two opposite jobs. It can drive
 | PORTx (port data) | write | Output pin: 1 = drive high (5 V), 0 = drive low (0 V). Input pin: 1 = pull-up on |
 | PINx (port input) | read | The level that is really on the pin now |
 
-The x is the port letter. The 23 I/O pins are grouped into Port B (PB0 to PB7), Port C (PC0 to PC6) and Port D (PD0 to PD7), and each port has its own three registers. Bit 5 of DDRB, PORTB and PINB all belong to pin PB5.
+The x is the port letter. The 23 I/O pins form Port B (PB0 to PB7), Port C (PC0 to PC6) and Port D (PD0 to PD7), each with its own three registers; bit 5 of DDRB, PORTB and PINB all belong to PB5. PORTx holds what you asked for, PINx what is on the wire, which on an input is decided by the circuit outside.
 
-PORTx holds what you asked for. PINx reports what is on the wire, which on an input pin is decided by the circuit outside.
-
-For one pin, the DDRx bit and the PORTx bit together select one of four states:
+Together, the DDRx bit and the PORTx bit of a pin select one of four states:
 
 | DDRx bit | PORTx bit | The pin is |
 |------|-------|-------------------|
@@ -87,7 +85,7 @@ For one pin, the DDRx bit and the PORTx bit together select one of four states:
 | 1 | 0 | Output, driven low |
 | 1 | 1 | Output, driven high |
 
-The pull-up is a resistor from the pin to the supply (VCC). The section on pull-up resistors below shows why a button needs one.
+The pull-up is a resistor from the pin to the supply (VCC); the section on pull-up resistors shows why a button needs one.
 
 ```text
   Output                     Input with pull-up
@@ -109,7 +107,7 @@ The pull-up is a resistor from the pin to the supply (VCC). The section on pull-
 
 ### Bit Manipulation Patterns
 
-One register holds eight pins. If you write a whole number to it, such as `PORTD = 8`, you set one pin and also force the other seven to 0. The patterns below change one bit and leave the rest as they were:
+One register holds eight pins, so writing a whole number, such as `PORTD = 8`, sets one pin and forces the other seven to 0. These patterns change one bit and leave the rest:
 
 - `(1 << PB5)` is the number 1 moved 5 places left: binary 00100000, a byte with only bit 5 set. It is called a mask.
 - `|=` (OR) sets the bits of the mask to 1.
@@ -143,9 +141,9 @@ DDRD |= (1 << PD2) | (1 << PD3) | (1 << PD4) | (1 << PD5);
 <InArticleAd />
 
 
-Each LED goes from its pin (PD2 to PD5) through a 220 ohm resistor to ground, with the longer leg (the anode) towards the pin. The resistor limits the current. A pin of the ATmega328P is tested for 20 mA in normal work, and 40 mA is the absolute maximum, beyond which it can be damaged. With 220 ohm an LED takes 9 to 14 mA.
+Each LED goes from its pin (PD2 to PD5) through a 220 ohm resistor to ground, longer leg (the anode) towards the pin. The resistor limits the current to 9 to 14 mA. A pin is tested for 20 mA in normal work; 40 mA is the absolute maximum, beyond which it can be damaged.
 
-The push button connects PD6 to ground, and a 10K resistor pulls PD6 up to VCC. So the pin reads high when the button is free and low when it is pressed.
+The push button connects PD6 to ground, and a 10K resistor pulls PD6 up to VCC, so the pin reads high when the button is free and low when it is pressed.
 
 ```text
           ATmega328P
@@ -165,7 +163,7 @@ The push button connects PD6 to ground, and a 10K resistor pulls PD6 up to VCC. 
               GND
 ```
 
-You can leave out the external 10K resistor. The firmware also switches on the internal pull-up of PD6.
+You can leave out the external 10K resistor: the firmware also switches on the internal pull-up of PD6.
 
 | Signal | Arduino Nano Pin | ATmega328P Pin | Connection |
 |--------|-----------------|----------------|------------|
@@ -182,12 +180,12 @@ You can leave out the external 10K resistor. The firmware also switches on the i
 <InArticleAd />
 
 
-A microcontroller cannot throw a dice. It does exactly what the program says, so it needs a rule that produces numbers which only look random. A linear feedback shift register (LFSR) is such a rule, and it uses only two cheap operations:
+A microcontroller does exactly what the program says, so it cannot throw a dice. It needs a rule that gives numbers which only look random. A linear feedback shift register (LFSR) is such a rule, with two cheap operations:
 
 1. Shift the 16-bit number one place to the right.
 2. If the bit that dropped off was 1, XOR the number with a fixed mask, `0xB400`.
 
-This form is called a Galois LFSR. With this mask the number passes through 65,535 values before the sequence repeats. The sequence is always the same. The dice is unpredictable because the main loop steps the LFSR thousands of times a second, so the result depends on the instant you press.
+This form is a Galois LFSR. With this mask the number passes through 65,535 values before the sequence repeats, always in the same order. The dice is unpredictable because the main loop steps the LFSR thousands of times a second, so the result depends on the instant you press.
 
 ```c
 static uint16_t lfsr = 0xACE1;  /* Non-zero seed */
@@ -334,7 +332,7 @@ int main(void)
 <InArticleAd />
 
 
-Use the Makefile you wrote for the Morse beacon. Replace the contents of `main.c` with the dice code, then:
+Use the Makefile of the Morse beacon, replace `main.c` with the dice code, then:
 
 ```bash
 make flash
@@ -342,14 +340,14 @@ make flash
 
 Press the button. The LEDs run through a rolling animation and then stop on a dice value.
 
-The firmware calls its own `delay_ms()` where the delay is calculated while the program runs, such as `50 + i * 20`. On many avr-gcc versions `_delay_ms()` accepts only a fixed number, so the wrapper calls `_delay_ms(1)` in a loop. The course uses this wrapper wherever a delay is a variable.
+Where a delay is calculated while the program runs, such as `50 + i * 20`, the firmware calls its own `delay_ms()`. On many avr-gcc versions `_delay_ms()` accepts only a fixed number, so this wrapper calls `_delay_ms(1)` in a loop; the course uses it wherever a delay is a variable.
 
 ## Understanding Pull-Up Resistors
 
 <InArticleAd />
 
 
-An input pin does not hold any level by itself. If nothing is connected, it collects electrical noise and reads 0 or 1 at random. This is a floating input. A button that only connects the pin to ground has the same problem whenever it is not pressed.
+An input pin holds no level by itself. Connected to nothing, it collects electrical noise and reads 0 or 1 at random: a floating input. A button that only connects the pin to ground has the same problem whenever it is not pressed.
 
 ```text
   Floating input:          Pull-up input:
@@ -366,9 +364,9 @@ An input pin does not hold any level by itself. If nothing is connected, it coll
                             (press = LOW)
 ```
 
-A pull-up resistor connects the pin to VCC, so the pin reads high when the button is free. Pressing the button connects the pin directly to ground, a much stronger connection than the resistor, so the pin reads low.
+A pull-up resistor connects the pin to VCC, so a free button reads high. Pressing connects the pin straight to ground, a much stronger path than the resistor, so it reads low. (A pull-up is like a door spring: it closes the door when nobody holds it, and any hand is stronger.)
 
-The ATmega328P has a pull-up resistor of 20K to 50K inside each pin. You switch it on by writing 1 to the PORTx bit while the DDRx bit is 0. An external 10K resistor pulls more strongly, which helps on long wires that collect noise.
+Each pin of the ATmega328P has an internal pull-up of 20K to 50K, switched on by writing 1 to the PORTx bit while the DDRx bit is 0. An external 10K pulls more strongly, which helps on long wires that collect noise.
 
 ## Exercises
 

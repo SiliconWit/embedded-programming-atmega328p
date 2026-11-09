@@ -27,14 +27,14 @@ import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 
 import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedded-programming-atmega328p/EmbeddedProgrammingAtmega328pComments.astro';
 
-A program that keeps time with a delay loop can do nothing else while it waits. It cannot read a button during the delay, and a tone made this way changes pitch whenever the program does other work. A timer removes the problem: it is a counter built in hardware that counts clock cycles by itself, whatever the program is doing. The ATmega328P has three timers. In this lesson you use one of them to build a tone generator: two buttons step the pitch up and down, and the timer drives a piezo buzzer directly, so you hear what each setting does. #Timers #CTC #PWM
+A program that keeps time with a delay loop can do nothing else while it waits: it cannot read a button, and a tone made this way changes pitch whenever the program does other work. A timer removes the problem. It is a hardware counter that counts clock cycles by itself, whatever the program is doing. The ATmega328P has three, and with one of them you build a tone generator: two buttons step the pitch up and down, and the timer drives a piezo buzzer directly, so you hear what each setting does. #Timers #CTC #PWM
 
 <PodcastEmbed src="https://open.spotify.com/episode/2lQEZPMY8cpp8XPVwukUL0?si=heWxjaGaSjaHnCwWzdW3ig" />
 
 ## What We Are Building
 
 <Card title="Tunable Tone Generator" icon="star">
-A piezo buzzer on pin OC1A, a pin that Timer1 can switch by itself. Two push buttons move the pitch up and down in semitones (the smallest step between two notes on a piano) across two octaves, from C4 (262 Hz) to C6 (1047 Hz). Two numbers that you write into the timer set the frequency: the prescaler and the compare value. No delay loop takes part in making the tone.
+A piezo buzzer on pin OC1A, a pin that Timer1 can switch by itself. Two push buttons move the pitch up and down in semitones (the smallest step between two notes on a piano) across two octaves, from C4 (262 Hz) to C6 (1047 Hz). Two numbers written into the timer, the prescaler and the compare value, set the frequency; no delay loop takes part.
 </Card>
 
 **Project specifications:**
@@ -69,7 +69,7 @@ A piezo buzzer on pin OC1A, a pin that Timer1 can switch by itself. Two push but
 A timer has three parts, and each one solves a problem:
 
 1. The counter (register TCNTn, where n is the timer number) adds 1 on every tick of its clock. Counting ticks of a known length is how hardware measures time.
-2. The prescaler slows the ticks. The system clock ticks 16 million times a second, so a counter fed directly from it is full in a few milliseconds. The prescaler passes on only every 8th, 64th, 256th or 1024th tick.
+2. The prescaler slows the ticks. Fed straight from the 16 MHz clock, a counter is full in a few milliseconds, so the prescaler passes on only every 8th, 64th, 256th or 1024th tick.
 3. The compare register (OCRnA) holds a number you choose. When the counter equals it, the hardware acts: it switches a pin, or raises an interrupt (a signal that makes the processor run a piece of your code).
 
 A counter that passes its largest value starts again at 0. This is called overflow.
@@ -83,7 +83,7 @@ flowchart TD
     D -->|overflow| F["Overflow\ninterrupt/flag"]
 ```
 
-Timer0 and Timer2 are 8-bit: they count from 0 to 255. Timer1 is 16-bit and counts from 0 to 65,535, so it can time longer intervals and set a frequency in finer steps. Each timer has two compare registers, A and B, and each compare register has its own output pin. The last column lists features that later lessons use.
+Timer0 and Timer2 are 8-bit (0 to 255). Timer1 is 16-bit (0 to 65,535), so it times longer intervals and sets a frequency in finer steps. Each timer has two compare registers, A and B, each with its own output pin. The last column lists features that later lessons use.
 
 | Timer | Width | Compare Channels | PWM Pins | Special Features |
 |-------|-------|-------------------|----------|-----------------|
@@ -104,7 +104,7 @@ The mode decides where the counter turns back and what the output pin does. This
 
 ### Prescaler Options
 
-Without a prescaler, each count lasts 62.5 nanoseconds. An 8-bit timer is then full after 16 microseconds, and the 16-bit timer after 4.1 ms. Neither can time a tenth of a second. With prescaler 8 the timer clock is 16 MHz / 8 = 2 MHz, so each count lasts 0.5 microseconds and Timer1 is full after 32.8 ms.
+Without a prescaler each count lasts 62.5 nanoseconds: an 8-bit timer is full after 16 microseconds, the 16-bit timer after 4.1 ms, and neither can time a tenth of a second. With prescaler 8 the timer clock is 16 MHz / 8 = 2 MHz: each count lasts 0.5 microseconds, and Timer1 is full after 32.8 ms.
 
 The price is resolution: a larger prescaler makes each count longer, so times and frequencies can be set only in coarser steps. Choose the smallest prescaler whose longest period covers what you need. In the table, us means microseconds. To see how prescalers are built from logic, read [Digital Electronics: Counters, Timers, and Dividers](/education/digital-electronics/counters-timers-dividers/).
 
@@ -121,7 +121,7 @@ The price is resolution: a larger prescaler makes each count longer, so times an
 <InArticleAd />
 
 
-CTC means Clear Timer on Compare. The counter counts from 0 up to the value in OCRnA and then starts again at 0. If you also tell the hardware to toggle (invert) the output pin at each match, the pin produces a square wave, and a square wave on a buzzer is a tone. A smaller compare value means a shorter count, so the pitch is higher.
+In CTC (Clear Timer on Compare) the counter counts from 0 up to OCRnA and starts again at 0. If the hardware also toggles (inverts) the output pin at each match, the pin makes a square wave, which a buzzer plays as a tone. A smaller compare value gives a shorter count and a higher pitch.
 
 ```text
   TCNTn
@@ -140,7 +140,7 @@ CTC means Clear Timer on Compare. The counter counts from 0 up to the value in O
    one period = 2*(1+OCRnA) ticks
 ```
 
-Two details set the formula. The counter passes through the values 0 to OCR1A, which is 1 + OCR1A ticks. And the pin changes once at each match, so one full wave (high, then low) needs two matches. The output frequency in hertz is therefore the timer clock divided by 2 × (1 + OCR1A):
+Two details set the formula: the counter passes through 0 to OCR1A, which is 1 + OCR1A ticks, and the pin changes once per match, so one full wave (high, then low) needs two matches. The output frequency in hertz is the timer clock divided by 2 × (1 + OCR1A):
 
 ```
 f_out = F_CPU / (2 * prescaler * (1 + OCR1A))
@@ -272,9 +272,9 @@ Once the two registers are set, the hardware toggles OC1A at every match and ret
 <InArticleAd />
 
 
-A digital pin is only fully on or fully off, so it cannot dim an LED or slow a motor directly. Pulse width modulation (PWM) switches the pin on and off at a fixed frequency, too fast to see, and changes the fraction of each cycle that the pin is on. That fraction is the duty cycle, and it sets the average power the load receives.
+A digital pin is fully on or fully off, so it cannot dim an LED or slow a motor directly. Pulse width modulation (PWM) switches it on and off at a fixed frequency, too fast to see, and varies the fraction of each cycle that it is on: the duty cycle, which sets the average power the load receives.
 
-Fast PWM mode uses the same counter and compare register. The counter always runs to MAX. The pin goes high when the counter starts at 0 and low at the compare match, so the compare value now sets the width of the pulse, not the frequency.
+Fast PWM uses the same counter and compare register. The counter always runs to MAX; the pin goes high when the counter starts at 0 and low at the compare match, so the compare value sets the pulse width, not the frequency. Phase correct PWM counts up and then down, so each cycle takes about twice as long and the pulse sits in the middle of it.
 
 ```text
   TCNTn

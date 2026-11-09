@@ -27,14 +27,14 @@ import EmbeddedProgrammingAtmega328pComments from '../../../../components/embedd
 
 import PodcastEmbed from '../../../../components/PodcastEmbed.astro';
 
-A board with no screen cannot show you what it is doing. A wrong sensor reading stays hidden inside the chip, and you can only guess at the fault. A serial link solves this with two wires: the chip sends text to your computer, one bit after another. In this lesson you set up the serial hardware of the ATmega328P from its registers and learn why both ends must agree on the speed. The project is a temperature logger that sends one reading a second as a line of text. #UART #Serial #DataLogging
+A board with no screen cannot show you what it is doing: a wrong sensor reading stays hidden inside the chip, and you can only guess at the fault. A serial link solves this with two wires, on which the chip sends text to your computer one bit after another. You set up the serial hardware of the ATmega328P from its registers and learn why both ends must agree on the speed. The project is a temperature logger that sends one reading a second as a line of text. #UART #Serial #DataLogging
 
 <PodcastEmbed src="https://open.spotify.com/episode/6TfVbjBI7HmBa0TZ0xaPAc?si=3_WlbDveT56-KqJrNnF-jQ" />
 
 ## What We Are Building
 
 <Card title="Temperature Logger with CSV Export" icon="star">
-A logger that reads an NTC thermistor, a resistor whose resistance falls as it gets warmer, once per second. The chip measures it with its analog to digital converter (ADC), which turns a voltage into a number from 0 to 1023 and has its own lesson later. The firmware converts the number to degrees Celsius and sends a line of comma separated values (CSV) over the UART at 9600 baud: time, raw ADC number, temperature. On the PC you save the lines to a file and plot them.
+A logger that reads an NTC thermistor, a resistor whose resistance falls as it gets warmer, once per second. The chip's analog to digital converter (ADC), which has its own lesson later, turns its voltage into a number from 0 to 1023. The firmware converts the number to degrees Celsius and sends a line of comma separated values (CSV) over the UART at 9600 baud: time, raw ADC number, temperature. On the PC you save the lines to a file and plot them.
 </Card>
 
 **Project specifications:**
@@ -64,7 +64,7 @@ A logger that reads an NTC thermistor, a resistor whose resistance falls as it g
 <InArticleAd />
 
 
-A UART (universal asynchronous receiver/transmitter) sends bits on one wire with no clock wire beside it. So the receiver has two problems: it cannot know when a byte begins, and it cannot know how long each bit lasts. The frame solves both:
+A UART (universal asynchronous receiver/transmitter) sends bits on one wire with no clock wire beside it, so the receiver cannot know when a byte begins or how long each bit lasts. The frame solves both:
 
 - The wire rests high. Every byte begins with a start bit, which is low. Its falling edge tells the receiver that a byte begins.
 - Both sides are set to the same speed in advance: the baud rate, in bits per second. From the start edge the receiver measures time with its own clock and reads each bit at the middle of its period.
@@ -107,7 +107,7 @@ $$
 
 For 16 MHz and 9600 baud: $\text{UBRR} = 16\,000\,000 / (16 \times 9600) - 1 = 103.17$. The register holds only whole numbers, so you write 103, and the real speed is $16\,000\,000 / (16 \times 104) = 9615$ baud. That is 0.16% too fast.
 
-A small error is harmless, because the receiver starts its timing again at every start bit. But inside one byte the error adds up over ten bits, and at the last bit the receiver may read the wrong one. The datasheet recommends an error of no more than about 2%.
+A small error is harmless, because the receiver restarts its timing at every start bit. Inside one byte, though, the error adds up over ten bits, and at the last bit the receiver may read the wrong one. The datasheet recommends no more than about 2%.
 
 | Baud Rate | UBRR (16 MHz) | Actual Baud | Error |
 |-----------|---------------|-------------|-------|
@@ -127,7 +127,7 @@ At 115200 baud with a 16 MHz crystal, the baud rate error is 3.5%. This is at th
 <InArticleAd />
 
 
-Setting up the UART is three writes: the baud rate, the switches for the transmitter and the receiver, and the frame format. The macro `UBRR_VAL` is the formula above. The compiler calculates it with whole numbers, so 103.17 becomes 103.
+Setting up the UART is three writes: the baud rate, the switches for the transmitter and the receiver, and the frame format. The macro `UBRR_VAL` is the formula above. The compiler calculates it with whole numbers, so 103.17 becomes 103. It divides before it subtracts 1, so it always rounds down: at 115200 baud it gives 7, not the 8 of the table, which is 125,000 baud, 8.5% fast. For fast rates, work out the nearest whole number by hand.
 
 ```c
 #define F_CPU 16000000UL
@@ -153,7 +153,7 @@ static void uart_init(void)
 <InArticleAd />
 
 
-The transmitter sends one byte at a time, and at 9600 baud a byte takes about 1 ms. So before each write to `UDR0` the code must wait until the flag UDRE0 shows that the register is free. The simplest way is to wait in a loop. This is called blocking, because the program does nothing else during the wait. A line of 30 characters holds the program for about 31 ms.
+The transmitter sends one byte at a time, about 1 ms each at 9600 baud, so before each write to `UDR0` the code waits until the flag UDRE0 shows that the register is free. Waiting in a loop is called blocking, because the program does nothing else meanwhile: a line of 30 characters holds it for about 31 ms.
 
 ```c
 static void uart_putc(char c)
@@ -179,7 +179,7 @@ static void uart_puts(const char *s)
 <InArticleAd />
 
 
-The logger sends one short line a second, so the complete firmware below uses blocking transmit. When a main loop cannot wait, use a ring buffer. It works as a queue at a counter. The main code puts characters at the back of the queue and continues at once. An interrupt takes one character from the front each time the transmitter is free. The queue is an array with two positions: `head`, where the main code writes next, and `tail`, where the ISR reads next.
+The logger sends one short line a second, so the complete firmware uses blocking transmit. When a main loop cannot wait, use a ring buffer, which works as a queue at a counter: the main code puts characters at the back and continues at once, and an interrupt takes one from the front each time the transmitter is free. The queue is an array with two positions: `head`, where the main code writes next, and `tail`, where the ISR reads next.
 
 ```text
   +---+---+---+---+---+---+---+---+
@@ -191,7 +191,7 @@ The logger sends one short line a second, so the complete firmware below uses bl
      next byte)      next byte)
 ```
 
-After the ISR has sent 'A' and the main code has written 'E', both positions have moved one place. At the end of the array each position returns to the start, which gives the ring its name.
+After the ISR has sent 'A' and the main code has written 'E', both positions have moved one place. At the end of the array each returns to the start, which gives the ring its name.
 
 ```text
   +---+---+---+---+---+---+---+---+
@@ -240,7 +240,7 @@ static void tx_puts(const char *s)
 <InArticleAd />
 
 
-The ADC measures voltage, not resistance. So the thermistor is placed in series with a fixed 10K resistor across the 5 V supply. The two share the voltage in proportion to their resistances (a voltage divider), and the ADC reads the point between them. When the thermistor warms, its resistance falls and the voltage at the ADC pin rises.
+The ADC measures voltage, not resistance, so the thermistor goes in series with a fixed 10K resistor across the 5 V supply. The two share the voltage in proportion to their resistances (a voltage divider), and the ADC reads the point between them. When the thermistor warms, its resistance falls and the voltage at the ADC pin rises.
 
 ```text
          VCC (5V)
