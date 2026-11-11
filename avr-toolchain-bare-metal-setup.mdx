@@ -52,7 +52,7 @@ Here is an [International Morse Code visual reference](https://drive.google.com/
 | Parameter | Value |
 |-----------|-------|
 | MCU | ATmega328P (on Arduino Nano or Uno) |
-| Clock | 16 MHz (external crystal) |
+| Clock | 16 MHz (external crystal; a ceramic resonator on the Uno) |
 | Toolchain | avr-gcc, avr-objcopy, avrdude |
 | Build system | GNU Make |
 | Programmer | USB serial (CH340/FTDI on Nano, ATmega16U2 on Uno) |
@@ -301,7 +301,8 @@ The default `/dev/ttyUSB0` is typical on Linux; macOS usually shows `/dev/cu.usb
 The program has three parts:
 
 1. A table, `morse[]`, with the dots and dashes for each letter A to Z.
-2. A delay function. `_delay_ms()` makes the processor count clock cycles and do nothing else. The compiler works out how many from `F_CPU`, so a wrong `F_CPU` gives wrong times.3. A loop in `main()` that finds each letter of the message in the table and blinks it.
+2. A delay function. `_delay_ms()` makes the processor count clock cycles and do nothing else. The compiler works out how many from `F_CPU`, so a wrong `F_CPU` gives wrong times.
+3. A loop in `main()` that finds each letter of the message in the table and blinks it.
 
 `DDRB` and `PORTB` are registers: bytes inside the chip whose bits are wired to hardware, so writing one changes what a pin does. `DDRB |= (1 << PB5)` makes pin PB5 an output, and `led_on()` and `led_off()` switch it high and low. The lesson on GPIO registers explains these lines.
 
@@ -418,6 +419,12 @@ int main(void)
 
 If avrdude reports `not in sync`, the upload speed is wrong: many Nano boards carry an older bootloader that listens at 57600. Set `BAUD = 57600` in the Makefile and run `make flash` again.
 
+### Check it
+
+"The LED blinks" does not yet prove the timing. Count in dot units of 200 ms: a dot is 1 unit on, a dash 3, the gap inside a letter 1, between letters 3, between words 7.
+
+"SAM" with the pause before it repeats is 34 units, 6.8 s, so ten repeats, from the first flash of one S to the first flash of the S ten repeats later, take 68 s on a stopwatch. A simulation of this exact program gave 6.803 s per repeat. About 4 s means `F_CPU` says 1 MHz while the board runs at 16 MHz; about 34 s means it says 8 MHz. Every time in later lessons depends on this number, so fix it here.
+
 ## Reading the Fuse Bits
 
 <InArticleAd />
@@ -446,7 +453,7 @@ Only read the fuse bytes. A wrong fuse setting can stop the chip from accepting 
 <InArticleAd />
 
 
-`make` runs avr-size, which prints the memory used: "Program" is flash (of 32 KB), "Data" is SRAM (of 2 KB). Most of the 116 bytes of Data are the Morse table, copied into SRAM at every start.
+`make` runs avr-size, which prints the memory used: "Program" is flash (of 32 KB), "Data" is SRAM (of 2 KB). Most of the 116 bytes of Data are the Morse table, copied into SRAM at every start. Another compiler version gives a few bytes more or less. Some builds of avr-size do not know `-C`; if yours stops with "invalid option", remove `--mcu=$(MCU) -C` from the Makefile, and add the `text` and `data` columns for flash, `data` and `bss` for SRAM.
 
 Watch the Data line as projects grow. The stack also lives in SRAM and is not counted here; when Data fills most of the 2 KB, the two overwrite each other and the program fails at random.
 

@@ -127,7 +127,7 @@ At 115200 baud with a 16 MHz crystal, the baud rate error is 3.5%. This is at th
 <InArticleAd />
 
 
-Setting up the UART is three writes: the baud rate, the switches for the transmitter and the receiver, and the frame format. The macro `UBRR_VAL` is the formula above. The compiler calculates it with whole numbers, so 103.17 becomes 103. It divides before it subtracts 1, so it always rounds down: at 115200 baud it gives 7, not the 8 of the table, which is 125,000 baud, 8.5% fast. For fast rates, work out the nearest whole number by hand.
+Setting up the UART is three writes: the baud rate, the transmitter and receiver switches, and the frame format. The macro `UBRR_VAL` is the formula above in whole numbers, so 103.17 becomes 103. It always rounds down: at 115200 baud it gives 7, not the 8 of the table, which is 125,000 baud, 8.5% fast. For fast rates, work out the nearest whole number by hand.
 
 ```c
 #define F_CPU 16000000UL
@@ -278,6 +278,8 @@ $T$ is the temperature in kelvin (degrees Celsius plus 273.15), $R$ is the therm
 
 For example, a reading of 600 gives $R = 10\,000 \times (1024 - 600) / 600 = 7067\,\Omega$, and then $T = 306.2\,\text{K}$, which is 33.0 C. A reading of 512, half of the range, means the two resistances are equal: 10,000 ohms, 25.0 C.
 
+The formula gives a number even for a broken sensor: an open wire reads near 0 (-77 C), a short near 1023 (352 C). The thermistor's range, -40 to 125 C, is readings 25 to 988, so the firmware accepts 20 to 1000 and otherwise leaves the field empty, which pandas reads as "not known".
+
 ## Complete Firmware
 
 <InArticleAd />
@@ -375,15 +377,20 @@ static uint32_t get_ms(void)
 #define R0       10000.0
 #define R_FIXED  10000.0
 
+#define TEMP_NOT_KNOWN INT16_MIN
+
 static int16_t adc_to_temp_x10(uint16_t adc_val)
 {
-    if (adc_val == 0) adc_val = 1;  /* Avoid division by zero */
+    /* Outside 20..1000 the sensor is not working: an open wire reads
+       near 0 (it would print -77 C), a short near 1023 (352 C).
+       This also avoids a division by zero. */
+    if (adc_val < 20 || adc_val > 1000) return TEMP_NOT_KNOWN;
 
     double r_therm = R_FIXED * (1024.0 - adc_val) / adc_val;
     double t_kelvin = 1.0 / ((1.0 / T0_K) + (log(r_therm / R0) / B_COEFF));
     double t_celsius = t_kelvin - 273.15;
 
-    return (int16_t)(t_celsius * 10);  /* Fixed-point: 25.3C = 253 */
+    return (int16_t)lround(t_celsius * 10);  /* Fixed-point: 25.3C = 253 */
 }
 
 /* --- Main --- */
@@ -401,8 +408,10 @@ int main(void)
 
     while (1) {
         uint32_t now = get_ms();
-        if (now >= next_sample) {
-            next_sample = now + 1000;  /* 1 Hz sample rate */
+        /* Subtract, do not compare: still right when the count
+           returns to 0 after 49.7 days */
+        if ((int32_t)(now - next_sample) >= 0) {
+            next_sample += 1000;  /* 1 Hz sample rate, no drift */
 
             uint16_t adc_val = adc_read();
             int16_t temp_x10 = adc_to_temp_x10(adc_val);
@@ -415,7 +424,12 @@ int main(void)
             uart_putu16(adc_val);
             uart_putc(',');
 
-            /* temperature with one decimal place */
+            /* temperature with one decimal place; an empty field
+               when the sensor is not working */
+            if (temp_x10 == TEMP_NOT_KNOWN) {
+                uart_puts("\r\n");
+                continue;
+            }
             int16_t whole = temp_x10 / 10;
             int16_t frac  = temp_x10 % 10;
             if (frac < 0) frac = -frac;
@@ -441,6 +455,10 @@ int main(void)
 <Tabs>
 <TabItem label="Linux/macOS">
 ```bash
+# Linux: set the port to 9600 baud first, or cat reads it at the
+# last speed used. On macOS use screen and its log (Ctrl+A then H).
+stty -F /dev/ttyUSB0 9600 raw -echo
+
 # Capture to file (Ctrl+C to stop)
 cat /dev/ttyUSB0 > temperature_log.csv
 
@@ -471,6 +489,17 @@ plt.show()
 ```
 </TabItem>
 </Tabs>
+
+### Check it
+
+Check the numbers against references you can trust:
+
+- Stirred ice water is 0.0 C: with the thermistor in a thin plastic bag in it, expect `235,0.0`.
+- A room thermometer must agree within about 1.5 C (a 5 % fixed resistor alone moves the result 1.1 C; a 1 % one, 0.2 C).
+- Pull one thermistor lead: the temperature field must go empty, and come back with the lead.
+- After the first line (about 32: the header takes 31 ms) the time grows by exactly 1000. Garbled text means a wrong baud rate.
+
+A simulation of this program gave `511,24.9` for 2.50 V on A0, an empty field at 0 V, and `235,0.0` at the ice-water voltage.
 
 ## Exercises
 

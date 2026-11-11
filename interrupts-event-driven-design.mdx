@@ -34,7 +34,7 @@ A program that reads a button once in each pass of its loop is polling. If the l
 ## What We Are Building
 
 <Card title="Reaction Time Tester" icon="star">
-The firmware waits a random time (1 to 5 seconds) and lights an LED, while a Timer1 interrupt counts milliseconds. Your press fires an external interrupt (INT0) that sets a flag, and the main loop subtracts two readings of the millisecond counter. The result goes to your computer as text over the USB serial link (the UART, which has its own lesson) at 9600 baud. A press before the LED is a false start. The button pin is never polled.
+The firmware waits a random time (1 to 5 seconds) and lights an LED, while a Timer1 interrupt counts milliseconds. Your press fires an external interrupt (INT0) that sets a flag, and the main loop subtracts two readings of the millisecond counter. The result goes to your computer as text over the USB serial link (the UART, which has its own lesson) at 9600 baud. A press before the LED is a false start. The press itself is never polled.
 </Card>
 
 **Project specifications:**
@@ -303,6 +303,11 @@ int main(void)
     uart_puts("Wait for the LED, then press the button!\r\n\r\n");
 
     while (1) {
+        /* Start only with the button released and settled: a release
+           also bounces, and each bounce is a falling edge on INT0 */
+        while (!(PIND & (1 << PD2)));
+        _delay_ms(50);
+
         /* Reset state */
         button_flag = 0;
         PORTB &= ~(1 << PB5);
@@ -343,6 +348,10 @@ int main(void)
 
         if (button_flag) {
             uint16_t reaction = get_ms() - led_on_time;
+            /* A fixed seed repeats the same waits after every reset:
+               mix in the press time. An LFSR at 0 stays at 0. */
+            lfsr ^= reaction;
+            if (lfsr == 0) lfsr = 0xBEEF;
             uart_puts("Reaction time: ");
             uart_putu16(reaction);
             uart_puts(" ms\r\n\r\n");
@@ -354,6 +363,12 @@ int main(void)
     }
 }
 ```
+
+A contact bounces when it closes and again when it opens, and every bounce is a falling edge. Extra edges while the flag is set do no harm, but a button held through the 2 s pause and released during "Get ready..." would report a false start. So each round starts only after the pin has read high and 50 ms have passed.
+
+### Check it
+
+Play ten rounds at 9600 baud. Most adults give 180 to 300 ms; results under about 100 ms are guesses, and many in a row point to INT0 firing with no press (check the pull-up line). A press during "Get ready..." must give "False start!", and no press must give "Too slow!" 3 s after the LED. In a simulation, a press 250.0 ms after the LED printed `Reaction time: 249 ms`: the counter counts whole milliseconds.
 
 ## Pin-Change Interrupts
 
@@ -399,7 +414,7 @@ sequenceDiagram
     Note over M: Result: 0x01FF (corrupt!)<br/>ATOMIC_BLOCK prevents this
 ```
 
-The fault is rare, so it passes every bench test and appears weeks later. `ATOMIC_BLOCK` from `util/atomic.h` switches interrupts off for the few instructions of the read, then restores them, so both bytes belong to the same value. A one-byte variable such as `button_flag` is read in one step and does not need it.
+The fault is rare, so it passes every bench test and appears weeks later. `ATOMIC_BLOCK` from `util/atomic.h` switches interrupts off for the few instructions of the read, then restores them. A one-byte variable such as `button_flag` is read in one step and does not need it.
 
 ```c
 #include <util/atomic.h>

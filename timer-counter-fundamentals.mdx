@@ -59,6 +59,8 @@ A piezo buzzer on pin OC1A, a pin that Timer1 can switch by itself. Two push but
 | 4 | Push buttons (tactile) | 2 | Reuse 1 from the electronic dice, add 1 new |
 | 5 | Jumper wires | ~8 | Male-to-male |
 
+A piezo buzzer reads as an open circuit on a multimeter's resistance range and connects straight to the pin. Many kit "passive buzzers" are magnetic, with a 16 to 42 ohm coil that would draw 120 to 310 mA from a pin rated 40 mA at most: add a 220 ohm series resistor (about 21 mA) or a transistor.
+
 ![Wiring on an Arduino Nano: a piezo buzzer from D9 to GND, and two push buttons from D6 and D7 to GND](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-Buzzer-Buttons.png)
 
 ## Timer Architecture Overview
@@ -267,6 +269,10 @@ int main(void)
 
 Once the two registers are set, the hardware toggles OC1A at every match and returns the counter to 0, without any code. This is why the tone stays steady while the program waits 50 ms in the debounce delay.
 
+### Check it
+
+Your ear cannot tell 440 Hz from 445 Hz, so measure. A phone tuner app, or a multimeter with a Hz range on D9, must read A4 (439.95 Hz) at power-on, C5 (523.3 Hz) after three presses of Up, and A5 (880.3 Hz) after twelve. A simulation of this program measured exactly these. An Uno's resonator can be 0.5 % off, about 2 Hz at A4. More than that, or a tone an octave away, means a wrong prescaler bit or table value.
+
 ## PWM Mode Preview
 
 <InArticleAd />
@@ -274,7 +280,7 @@ Once the two registers are set, the hardware toggles OC1A at every match and ret
 
 A digital pin is fully on or fully off, so it cannot dim an LED or slow a motor directly. Pulse width modulation (PWM) switches it on and off at a fixed frequency, too fast to see, and varies the fraction of each cycle that it is on: the duty cycle, which sets the average power the load receives.
 
-Fast PWM uses the same counter and compare register. The counter always runs to MAX; the pin goes high when the counter starts at 0 and low at the compare match, so the compare value sets the pulse width, not the frequency. Phase correct PWM counts up and then down, so each cycle takes about twice as long and the pulse sits in the middle of it.
+Fast PWM uses the same counter and compare register. In the mode used here the counter runs to MAX (another mode stops at OCRnA to set the frequency); the pin goes high when the counter starts at 0 and low at the compare match, so the compare value sets the pulse width, not the frequency. Phase correct PWM counts up and then down, so each cycle takes about twice as long and the pulse sits in the middle of it.
 
 ```text
   TCNTn
@@ -305,7 +311,7 @@ DDRD |= (1 << PD6);    /* OC0A output */
 ```
 
 :::tip[Instrument it]
-A timer can also count pulses that come from outside, and then it is a measuring instrument. Give it the pulses of a Hall sensor that watches a magnet on a shaft, and it counts revolutions: a tachometer. The same method on the pulse output of a flow meter reads litres per minute. An [ATmega](/education/sensor-actuator-interfacing-stm32/) measures it, and an [ESP32 or STM32 link](/education/iot-systems/) can [log RPM or flow](https://siliconwit.io) to catch a belt slipping or a pump losing prime.
+A timer can also count pulses that come from outside, and then it is a measuring instrument: Timer1 counts edges on pin T1 (PD5) when its clock select bits choose the external pin. Give it the pulses of a Hall sensor that watches a magnet on a shaft, and it counts revolutions: a tachometer. The same method on the pulse output of a flow meter reads litres per minute. The ATmega328P measures it (the [sensor interfacing course](/education/sensor-actuator-interfacing-stm32/) wires such sensors), and an [ESP32 or STM32 link](/education/iot-systems/) can [log RPM or flow](https://siliconwit.io) to catch a belt slipping or a pump losing prime.
 :::
 
 ## Exercises

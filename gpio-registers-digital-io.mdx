@@ -74,7 +74,7 @@ A general purpose input/output (GPIO) pin does one of two opposite jobs: it driv
 | PORTx (port data) | write | Output pin: 1 = drive high (5 V), 0 = drive low (0 V). Input pin: 1 = pull-up on |
 | PINx (port input) | read | The level that is really on the pin now |
 
-The x is the port letter. The 23 I/O pins form Port B (PB0 to PB7), Port C (PC0 to PC6) and Port D (PD0 to PD7), each with its own three registers; bit 5 of DDRB, PORTB and PINB all belong to PB5. PORTx holds what you asked for, PINx what is on the wire, which on an input is decided by the circuit outside.
+The x is the port letter. The 23 I/O pins form Port B (PB0 to PB7), Port C (PC0 to PC6) and Port D (PD0 to PD7), each with its own three registers; bit 5 of DDRB, PORTB and PINB all belong to PB5. On the Nano and Uno, PB6 and PB7 carry the 16 MHz crystal and PC6 is RESET, so 20 pins are free for your circuits. PORTx holds what you asked for, PINx what is on the wire, which on an input is decided by the circuit outside.
 
 Together, the DDRx bit and the PORTx bit of a pin select one of four states:
 
@@ -217,6 +217,8 @@ Four LEDs cannot show six dots, so each dice value gets its own pattern, and 5 a
 | 5 | ON | ON | ON | ON | All + single blink |
 | 6 | ON | ON | ON | ON | All + double blink |
 
+After the blinks, 4, 5 and 6 all leave four LEDs on, so a single blink is missed by anyone who looks a moment late. The firmware repeats the blinks about every 1.2 s until the next roll.
+
 ## Complete Firmware
 
 <InArticleAd />
@@ -303,6 +305,7 @@ int main(void)
     PORTD |= (1 << BTN_PIN);
 
     uint8_t last_value = 1;
+    uint16_t ticks = 0;       /* counts 100 us passes of the loop */
     show_dice(last_value);
 
     while (1) {
@@ -322,6 +325,15 @@ int main(void)
             /* Wait for button release */
             while (!(PIND & (1 << BTN_PIN)));
             _delay_ms(50);
+            ticks = 0;
+        }
+
+        /* 5 and 6 end with all four LEDs on, as 4 does:
+           repeat their blinks about once a second so they can be told apart */
+        _delay_us(100);
+        if (++ticks >= 10000) {
+            ticks = 0;
+            if (last_value >= 5) show_dice(last_value);
         }
     }
 }
@@ -340,7 +352,11 @@ make flash
 
 Press the button. The LEDs run through a rolling animation and then stop on a dice value.
 
-Where a delay is calculated while the program runs, such as `50 + i * 20`, the firmware calls its own `delay_ms()`. On many avr-gcc versions `_delay_ms()` accepts only a fixed number, so this wrapper calls `_delay_ms(1)` in a loop; the course uses it wherever a delay is a variable.
+### Check it
+
+At power-on only LED2 is lit (a 1). A 4 must light all four LEDs; a dark one is reversed or in the wrong breadboard row. Then roll 60 times and tally. A fair dice gives each value about 10 times, and between 3 and 18 in 97 runs of 100. A value that never comes, or comes 25 times, points to a fault, such as 5 and 6 read as 4. One held press must give exactly one roll.
+
+A delay calculated while the program runs, such as `50 + i * 20`, goes through the firmware's own `delay_ms()`, which calls `_delay_ms(1)` in a loop: on many avr-gcc versions `_delay_ms()` accepts only a fixed number. The course does this wherever a delay is a variable.
 
 ## Understanding Pull-Up Resistors
 

@@ -68,7 +68,9 @@ A BME280 environmental sensor connected over I2C provides temperature (0.01 C re
 
 All devices on an I2C bus share two wires: SDA (serial data) carries the bits, and SCL (serial clock) says when to read each bit. With no select wires, I2C must solve two problems: many devices drive the same data wire, and the master must still choose one of them.
 
-The first problem is electrical: if one device pushed SDA high while another pulled it low, a large current would flow between them. So an I2C device can only pull a line low or let it go, an output called open-drain. A pull-up resistor from each line to VCC (typically 4.7K) brings the line high when every device lets go. It is like a bar held up by a spring: anyone can press it down, two hands together do no harm, and the spring lifts it when all let go. Without the pull-up resistors the lines never go high, and the bus does not work.
+The first problem is electrical: if one device pushed SDA high while another pulled it low, a large current would flow. So an I2C device can only pull a line low or let it go (open-drain), and a pull-up resistor from each line to VCC (typically 4.7K) brings it high when all let go, like a bar held up by a spring that anyone can press down. Without the pull-up resistors the lines never go high, and the bus does not work.
+
+The BME280 is a 3.3 V chip. A module with no regulator must be powered from 3.3 V, with CS tied to 3.3 V, not 5 V as in the drawing. Its pull-ups then go to 3.3 V, and a 5 V ATmega328P is guaranteed to read a high only above 0.7 × 5 V = 3.5 V: it works on most boards, not all. A module with a level shifter is safe.
 
 ```text
         VCC
@@ -119,7 +121,7 @@ For a comparison of I2C with SPI and other buses, see [Digital Electronics: Bus 
 <InArticleAd />
 
 
-The ATmega328P calls its I2C hardware TWI (Two-Wire Interface). It makes the START, the clock pulses and the STOP one step at a time: your program asks for a step, waits until it is done, and reads a status code that says what happened on the bus. A driver that reads these codes can say exactly where a fault is.
+The ATmega328P calls its I2C hardware TWI (Two-Wire Interface). Your program asks for one step at a time (START, a byte, STOP), waits until it is done, and reads a status code that says what happened, so a driver can say exactly where a fault is.
 
 A write to a register of the BME280 has these steps. S is START, P is STOP, and the last row is the status code in the TWSR register after each step.
 
@@ -156,7 +158,7 @@ One bit of TWCR surprises everyone: TWINT. The hardware sets it to 1 when a step
 
 ### Setting the I2C Clock Speed
 
-Every device on the bus must follow the clock. All I2C devices accept 100 kHz, and most newer ones, the BME280 among them, 400 kHz. The hardware divides the system clock to make SCL, and TWBR sets the division. For 100 kHz with a 16 MHz system clock and prescaler 1:
+All I2C devices accept 100 kHz, and most newer ones, the BME280 among them, 400 kHz. TWBR sets how the hardware divides the system clock to make SCL. For 100 kHz with a 16 MHz system clock and prescaler 1:
 
 ```
 TWBR = ((F_CPU / SCL_FREQ) - 16) / 2
@@ -168,7 +170,7 @@ TWBR = ((16000000 / 100000) - 16) / 2 = 72
 <InArticleAd />
 
 
-The driver has one function for each step of a transaction. Each writes TWCR to ask for the step, then waits for TWINT.
+The driver has one function for each step of a transaction. Each writes TWCR to ask for the step, then waits for TWINT, but not for ever: with no pull-ups, or SDA held low, the step never finishes. `twi_wait()` gives up after about 10 ms, and the step returns status 0, which no good step gives.
 
 ```c
 #define F_CPU 16000000UL
@@ -185,38 +187,51 @@ static void twi_init(void)
     TWCR = (1 << TWEN);  /* Enable TWI */
 }
 
+/* Wait until TWINT says the step is done, at most about 10 ms.
+   A bus held low (no pull-ups, a confused sensor) never finishes,
+   and an endless wait would freeze the whole program. */
+static uint8_t twi_wait(void)
+{
+    for (uint16_t t = 0; t < 10000; t++) {
+        if (TWCR & (1 << TWINT)) return 1;
+        _delay_us(1);
+    }
+    return 0;
+}
+
 static uint8_t twi_start(void)
 {
     TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
-    while (!(TWCR & (1 << TWINT)));
+    if (!twi_wait()) return 0;   /* 0: no step finished */
     return (TWSR & 0xF8);  /* Status code */
 }
 
 static void twi_stop(void)
 {
     TWCR = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN);
-    while (TWCR & (1 << TWSTO));  /* Wait for stop to complete */
+    for (uint16_t t = 0; t < 10000 && (TWCR & (1 << TWSTO)); t++)
+        _delay_us(1);              /* Wait for stop, at most 10 ms */
 }
 
 static uint8_t twi_write(uint8_t data)
 {
     TWDR = data;
     TWCR = (1 << TWINT) | (1 << TWEN);
-    while (!(TWCR & (1 << TWINT)));
+    if (!twi_wait()) return 0;
     return (TWSR & 0xF8);
 }
 
 static uint8_t twi_read_ack(void)
 {
     TWCR = (1 << TWINT) | (1 << TWEA) | (1 << TWEN);
-    while (!(TWCR & (1 << TWINT)));
+    twi_wait();
     return TWDR;
 }
 
 static uint8_t twi_read_nack(void)
 {
     TWCR = (1 << TWINT) | (1 << TWEN);
-    while (!(TWCR & (1 << TWINT)));
+    twi_wait();
     return TWDR;
 }
 ```
@@ -241,20 +256,22 @@ static uint8_t twi_read_nack(void)
 <InArticleAd />
 
 
-Like most I2C sensors, the BME280 is a set of numbered one-byte registers with a pointer to one of them: a write sets the pointer, and a read returns the register it points to. After each byte read the pointer moves on, so one transaction can read several registers in a row: a burst read. The master answers each byte with an ACK, which means "send the next one", and the last byte with a NACK.
+Each function below returns 0 at the first status code that differs from the table. Like most I2C sensors, the BME280 is a set of numbered one-byte registers with a pointer to one of them: a write sets the pointer, and a read returns the register it points to. After each byte read the pointer moves on, so one transaction can read several registers in a row: a burst read. The master answers each byte with an ACK, which means "send the next one", and the last byte with a NACK.
 
 Calibration data, written at the factory, is in registers 0x88 through 0xA1 and 0xE1 through 0xF0. The raw results are in 0xF7 through 0xFE: 8 bytes for pressure, temperature and humidity.
 
 ```c
 #define BME280_ADDR 0x76
 
-static void bme280_write_reg(uint8_t reg, uint8_t val)
+/* Returns 1 when every step got the status code it should */
+static uint8_t bme280_write_reg(uint8_t reg, uint8_t val)
 {
-    twi_start();
-    twi_write((BME280_ADDR << 1) | 0);  /* Write mode */
-    twi_write(reg);
-    twi_write(val);
+    uint8_t ok = twi_start() == 0x08
+              && twi_write((BME280_ADDR << 1) | 0) == 0x18  /* Write mode */
+              && twi_write(reg) == 0x28
+              && twi_write(val) == 0x28;
     twi_stop();
+    return ok;
 }
 
 static uint8_t bme280_read_reg(uint8_t reg)
@@ -269,18 +286,22 @@ static uint8_t bme280_read_reg(uint8_t reg)
     return val;
 }
 
-static void bme280_read_burst(uint8_t reg, uint8_t *buf, uint8_t len)
+static uint8_t bme280_read_burst(uint8_t reg, uint8_t *buf, uint8_t len)
 {
-    twi_start();
-    twi_write((BME280_ADDR << 1) | 0);
-    twi_write(reg);
-    twi_start();
-    twi_write((BME280_ADDR << 1) | 1);
-    for (uint8_t i = 0; i < len - 1; i++) {
-        buf[i] = twi_read_ack();
+    uint8_t ok = twi_start() == 0x08
+              && twi_write((BME280_ADDR << 1) | 0) == 0x18
+              && twi_write(reg) == 0x28
+              && twi_start() == 0x10                         /* Repeated start */
+              && twi_write((BME280_ADDR << 1) | 1) == 0x40;  /* Read mode */
+    if (ok) {
+        for (uint8_t i = 0; i < len - 1; i++) {
+            buf[i] = twi_read_ack();
+        }
+        buf[len - 1] = twi_read_nack();
+        ok = ((TWSR & 0xF8) == 0x58);  /* Last byte came, NACK sent */
     }
-    buf[len - 1] = twi_read_nack();
     twi_stop();
+    return ok;
 }
 ```
 
@@ -289,7 +310,7 @@ static void bme280_read_burst(uint8_t reg, uint8_t *buf, uint8_t len)
 <InArticleAd />
 
 
-No two sensor chips are exactly alike, so the maker measures each BME280 and stores 18 correction numbers in it. The raw results mean nothing without them; the program reads them once at start. Each 16-bit number arrives low byte first, and the code joins the two bytes with a shift. `bme280_init()` then writes three setting registers, which switch on all three measurements.
+No two sensor chips are exactly alike, so the maker measures each BME280 and stores 18 correction numbers in it. The raw results mean nothing without them; the program reads them once at start. Each 16-bit number arrives low byte first, and the code joins the two bytes with a shift. `bme280_init()` first checks the chip ID, 0x60; many modules sold as BME280 carry a BMP280 (ID 0x58), with no humidity sensor. Then it writes three setting registers, which switch on all three measurements.
 
 ```c
 /* Calibration data structure */
@@ -306,10 +327,10 @@ typedef struct {
 
 static bme280_cal_t cal;
 
-static void bme280_read_calibration(void)
+static uint8_t bme280_read_calibration(void)
 {
     uint8_t buf[26];
-    bme280_read_burst(0x88, buf, 26);
+    if (!bme280_read_burst(0x88, buf, 26)) return 0;
 
     cal.dig_T1 = (uint16_t)(buf[1] << 8) | buf[0];
     cal.dig_T2 = (int16_t)(buf[3] << 8) | buf[2];
@@ -327,21 +348,29 @@ static void bme280_read_calibration(void)
     cal.dig_H1 = bme280_read_reg(0xA1);
 
     uint8_t hbuf[7];
-    bme280_read_burst(0xE1, hbuf, 7);
+    if (!bme280_read_burst(0xE1, hbuf, 7)) return 0;
     cal.dig_H2 = (int16_t)(hbuf[1] << 8) | hbuf[0];
     cal.dig_H3 = hbuf[2];
-    cal.dig_H4 = (int16_t)(hbuf[3] << 4) | (hbuf[4] & 0x0F);
-    cal.dig_H5 = (int16_t)(hbuf[5] << 4) | (hbuf[4] >> 4);
+    /* 0xE4 and 0xE6 are signed, as in the Bosch driver */
+    cal.dig_H4 = (int16_t)((int8_t)hbuf[3] * 16) | (hbuf[4] & 0x0F);
+    cal.dig_H5 = (int16_t)((int8_t)hbuf[5] * 16) | (hbuf[4] >> 4);
     cal.dig_H6 = (int8_t)hbuf[6];
+    return 1;
 }
 
-static void bme280_init(void)
+/* Returns 1 when a BME280 answered and is set up */
+static uint8_t bme280_init(void)
 {
+    /* Chip ID: 0x60 is a BME280. 0x58 is a BMP280, often sold as a
+       BME280: same pins, but it has no humidity sensor. */
+    uint8_t id;
+    if (!bme280_read_burst(0xD0, &id, 1) || id != 0x60) return 0;
+
     /* Soft reset */
     bme280_write_reg(0xE0, 0xB6);
     _delay_ms(10);
 
-    bme280_read_calibration();
+    if (!bme280_read_calibration()) return 0;
 
     /* Humidity oversampling x1 (must be set before ctrl_meas) */
     bme280_write_reg(0xF2, 0x01);
@@ -350,7 +379,7 @@ static void bme280_init(void)
     bme280_write_reg(0xF4, 0x27);
 
     /* Standby 1000ms, filter off */
-    bme280_write_reg(0xF5, 0xA0);
+    return bme280_write_reg(0xF5, 0xA0);
 }
 ```
 
@@ -359,7 +388,7 @@ static void bme280_init(void)
 <InArticleAd />
 
 
-Compensation turns a raw result and the correction numbers into a real unit, such as degrees Celsius. The three functions below come from the BME280 datasheet of Bosch, the maker: copy them exactly, without trying to follow each line. They use whole numbers only, because this chip has no hardware for decimal arithmetic. The temperature function must run first: it stores a value, `t_fine`, that the other two need, because pressure and humidity readings change with temperature.
+Compensation turns a raw result and the correction numbers into a real unit. The three functions below come from Bosch's BME280 datasheet: copy them exactly. They use whole numbers only, because this chip has no hardware for decimal arithmetic. The temperature function must run first: it stores a value, `t_fine`, that the other two need, because pressure and humidity readings change with temperature.
 
 ```c
 static int32_t t_fine;
@@ -422,12 +451,21 @@ int main(void)
     twi_init();
     spi_init();
     oled_init();
-    bme280_init();
+    uint8_t sensor_ok = bme280_init();
 
     while (1) {
         /* Read raw data burst (0xF7 to 0xFE, 8 bytes) */
         uint8_t data[8];
-        bme280_read_burst(0xF7, data, 8);
+        if (!sensor_ok || !bme280_read_burst(0xF7, data, 8)) {
+            /* No answer: show no numbers at all, never old or
+               made-up ones, and try to start the sensor again */
+            fb_clear();
+            fb_draw_string(0, 0, "BME280: no answer");
+            oled_flush();
+            _delay_ms(2000);
+            sensor_ok = bme280_init();
+            continue;
+        }
 
         int32_t adc_P = ((int32_t)data[0] << 12) | ((int32_t)data[1] << 4) | (data[2] >> 4);
         int32_t adc_T = ((int32_t)data[3] << 12) | ((int32_t)data[4] << 4) | (data[5] >> 4);
@@ -438,7 +476,7 @@ int main(void)
         uint32_t press_pa = compensate_press(adc_P);  /* Pa */
         uint32_t humid_1024 = compensate_humid(adc_H); /* % * 1024 */
 
-        /* Format and display. The Lesson 6 font holds only digits and ':'.
+        /* Format and display. The SPI lesson's font holds only digits and ':'.
            Add glyphs for the letters, '.' and '%' used below to font_5x7
            and fb_draw_char(), or those characters stay blank. */
         fb_clear();
@@ -460,12 +498,12 @@ int main(void)
         fb_draw_string(84, 2, "C");
 
         fb_draw_string(0, 4, "Hum:");
-        utoa((uint16_t)(humid_1024 / 1024), buf, 10);
+        utoa((uint16_t)((humid_1024 + 512) / 1024), buf, 10);  /* Rounded */
         fb_draw_string(30, 4, buf);
         fb_draw_string(54, 4, "%");
 
         fb_draw_string(0, 6, "hPa:");
-        utoa((uint16_t)(press_pa / 100), buf, 10);
+        utoa((uint16_t)((press_pa + 50) / 100), buf, 10);      /* Rounded */
         fb_draw_string(30, 6, buf);
 
         oled_flush();
@@ -473,6 +511,15 @@ int main(void)
     }
 }
 ```
+
+### Check it
+
+- Temperature: within about 1 C of a room thermometer beside it in moving air (a sensor near the board's regulator reads warm).
+- Pressure: about 1013 hPa at sea level, about 12 hPa less per 100 m of height (about 899 hPa at 1,000 m), or a nearby weather station's value.
+- Humidity: breathe on the sensor; it rises within seconds and falls back within a minute.
+- Pull the SDA wire: within 2 s the screen shows `BME280: no answer` and no numbers; the readings return with the wire, with no reset.
+
+On a simulated ATmega328P the compensation code gave Bosch's own example results: 25.08 C (`2508`) and 100,656 Pa.
 
 ## I2C Bus Debugging Tips
 
@@ -494,13 +541,13 @@ When a device does not answer, measure before you change code: with the bus idle
 <InArticleAd />
 
 
-1. Add error checking to the TWI driver: verify the status code after each operation and return an error code if something unexpected happens. Implement a retry mechanism.
+1. Extend the error checking of the burst read to `bme280_read_reg()`, and return a separate error code for each step that can fail (start, address, register, data). Implement a retry mechanism that tries three times before it reports "no answer".
 2. Display the pressure as altitude using the barometric formula: $\text{altitude} = 44330 \times \left(1 - (P / P_0)^{0.1903}\right)$ meters, where $P_0$ is sea-level pressure (101325 Pa).
 3. Log all three readings over UART (with the driver from the serial communication lesson) in CSV format alongside the OLED display, so you can capture data on a PC.
 4. Add a second I2C device (for example a BH1750 light sensor at address 0x23) and display its readings on the fourth line of the OLED.
 
 :::tip[Instrument it]
-A BME280 is more than a demo: the same three readings catch real problems where equipment lives. Put one inside an electronics enclosure or a server cabinet and rising temperature with rising humidity warns of a failing fan or condensation before it shorts a board; in a cold-chain box or a greenhouse it proves the conditions your goods or crop actually saw. Mount it in moving air, not against a warm wall, and the [ATmega](/education/sensor-actuator-interfacing-stm32/) can log it locally or [hand it to an ESP32](/education/iot-systems/), which can then [stream and alert](https://siliconwit.io) when a limit is crossed.
+A BME280 is more than a demo: the same three readings catch real problems where equipment lives. Put one inside an electronics enclosure or a server cabinet and rising temperature with rising humidity warns of a failing fan or condensation before it shorts a board; in a cold-chain box or a greenhouse it proves the conditions your goods or crop actually saw. Mount it in moving air, not against a warm wall, and the ATmega328P can log it locally (the [sensor interfacing course](/education/sensor-actuator-interfacing-stm32/) covers more such sensors) or [hand it to an ESP32](/education/iot-systems/), which can then [stream and alert](https://siliconwit.io) when a limit is crossed.
 :::
 
 ## Summary

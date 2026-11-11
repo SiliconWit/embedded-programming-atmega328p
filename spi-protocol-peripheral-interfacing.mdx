@@ -170,6 +170,8 @@ The 7-pin OLED module needs three bus wires (clock, data, chip select) and two t
 
 ![Wiring drawing: Nano D13 to OLED clock, D11 to data, D8 to reset, D9 to DC, D10 to CS, plus 5V and GND.](https://cdn.siliconwit.com/education/embedded-programming-atmega328p/Nano-OLED-SPI.png)
 
+The SSD1306 itself is a 3.3 V chip. Most modules carry a regulator, so 5 V on VCC is fine, but many connect D0, D1, RES, DC and CS straight to the controller. 5 V signals then work on most modules but are outside the SSD1306 data sheet; in a product, use a level shifter or run the microcontroller at 3.3 V.
+
 ## SSD1306 Driver
 
 <InArticleAd />
@@ -405,6 +407,16 @@ int main(void)
     }
 }
 ```
+
+### Check it
+
+The time must appear mid-screen, `00:00:00` at power-on, changing once a second (a simulation, with the SPI bytes rebuilt into a picture, showed `00:00:02` in pixel rows 24 to 31 after two seconds). Then compare it with a phone clock for one hour:
+
+- On a Nano with a 16 MHz crystal (about 50 ppm), it drifts at most about 0.2 s an hour, 4 s a day.
+- On an Uno, whose ATmega328P runs from a ceramic resonator (up to 0.5 %), it can drift 18 s an hour, 7 minutes a day.
+- At every power cut it starts again at `00:00:00`.
+
+This is why a clock that must be right uses a separate real-time clock chip, such as the DS3231, with its own crystal and a coin cell. To test the change of day without waiting 24 hours, start `seconds` at 86390 for one run: ten seconds later `23:59:59` must become `00:00:00`.
 
 ## SPI Clock Speed and Prescaler
 

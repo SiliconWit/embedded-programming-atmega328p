@@ -9,8 +9,8 @@
 #define DOT_MS    200
 #define DASH_MS   600
 #define SYMBOL_GAP  200   /* gap between dots/dashes in a letter */
-#define LETTER_GAP  600   /* gap between letters */
-#define WORD_GAP   1400   /* gap between words */
+#define LETTER_GAP  400   /* added after the symbol gap: 600 between letters */
+#define WORD_GAP    800   /* added after the letter gap: 1400 between words */
 
 /* Morse lookup: A-Z encoded as strings of '.' and '-' */
 static const char *morse[] = {

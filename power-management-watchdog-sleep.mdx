@@ -81,8 +81,8 @@ The price: a part whose clock is stopped cannot notice anything, so it cannot wa
 | ADC Noise Reduction | ~1 mA | ADC, Timer2 (async), ext. interrupts | ADC complete, ext. int, Timer2, PCINT |
 | Power-save | ~1 uA | Timer2 (async), ext. interrupts | Timer2, ext. int, PCINT |
 | Power-down | ~0.1 uA (~4 uA with watchdog) | External interrupts, watchdog if enabled | INT0 and INT1 (low level), PCINT, TWI address match, watchdog |
-| Standby | ~0.2 uA | Main oscillator, ext. interrupts | Same as power-down (faster wake) |
-| Extended Standby | ~0.2 uA | Main osc, Timer2 (async) | Timer2 + power-down sources |
+| Standby | Power-down plus the running crystal oscillator (far above 0.2 uA) | Main oscillator, ext. interrupts | Same as power-down (faster wake) |
+| Extended Standby | As Standby, plus Timer2 | Main osc, Timer2 (async) | Timer2 + power-down sources |
 
 Power-down is the deepest mode, and the door alert uses it. Every clock is stopped, so only events that need no clock can wake the chip:
 
@@ -306,6 +306,8 @@ This chip runs at 8 MHz, not at the 16 MHz of the Nano. You need a separate Make
 
 Read `enter_deep_sleep()` first. An interrupt arriving between the check of the two flags and the sleep instruction would set its flag, and the chip would sleep on it for up to 8 seconds. So the function switches interrupts off with `cli()`, checks the flags, and switches them on with `sei()` directly before `sleep_cpu()`. The chip always runs one more instruction after `sei()` before it accepts an interrupt, so no event can slip in between.
 
+The reed contacts bounce when the door opens and when it closes, and the pin-change interrupt sees every bounce. So an opening counts only if the pin is still high 50 ms later, and `door_opened` is cleared only after the alarm, since the same opening's bounces set it again. In a simulation with bounces, the program without these lines sounded three alarms for one opening and closing; this one sounds one.
+
 ```c
 #ifndef F_CPU
 #define F_CPU 8000000UL  /* Internal 8 MHz RC oscillator */
@@ -452,18 +454,26 @@ int main(void)
         /* --- Woke up --- */
 
         if (door_opened) {
-            door_opened = 0;
+            /* Count it only if the door is still open 50 ms later: the
+               contacts bounce when the door closes too, and a bounce
+               read as high would look like an opening */
+            _delay_ms(50);
+            if (PIND & (1 << REED_PIN)) {
+                /* Increment and save door count */
+                door_count++;
+                eeprom_update_word(EE_DOOR_COUNT, door_count);
 
-            /* Increment and save door count */
-            door_count++;
-            eeprom_update_word(EE_DOOR_COUNT, door_count);
-
-            /* Sound alarm */
-            buzzer_beep(2000);
-            led_blink(3, 200, 200);
+                /* Sound alarm */
+                buzzer_beep(2000);
+                led_blink(3, 200, 200);
+            }
 
             /* Wait for door to close (debounce) */
             _delay_ms(500);
+
+            /* Clear the flag last: the bounces of this same opening
+               set it again while the alarm sounds */
+            door_opened = 0;
         }
 
         if (wdt_fired) {
@@ -526,7 +536,7 @@ Fuses are setting bytes stored in the chip, outside the program, for things the 
 |------|-------|---------|
 | lfuse | 0xE2 | Internal 8 MHz RC, 65ms startup, no clock divide |
 | hfuse | 0xD9 | No bootloader, SPI enabled, EEPROM erased by a chip erase (use 0xD1 to preserve the door count when you reflash) |
-| efuse | 0xFF | BOD disabled (we disable it in software too) |
+| efuse | 0xFF | BOD disabled (the software BOD switch-off in `enter_deep_sleep()` then has nothing to do; it saves current only when a BOD level is set) |
 
 ```bash
 # Program fuses with USBasp
@@ -539,6 +549,15 @@ avrdude -c usbasp -p m328p \
 :::caution
 Double-check fuse values before writing. Setting the wrong clock source fuse can make the chip unprogrammable without a high-voltage programmer or an external clock source.
 :::
+
+The data sheet allows 8 MHz only above about 2.4 V, and two alkaline cells spend much of their life near 1.2 V each. With BOD off, a chip below its limit can run wrong instructions or write a wrong count into EEPROM. In the field, set a BOD level (the program switches BOD off in sleep, so it costs current only while awake): 2.7 V (efuse 0xFD) keeps the chip inside its limits but gives up while the cells still hold much charge; 1.8 V (0xFE) stops only the worst, so add the 2.4 V warning of Exercise 1.
+
+### Check it
+
+1. Power-on on a fresh chip: 3 quick blinks, then one short blink about every 8 s (7 to 9 s: the watchdog oscillator is not exact).
+2. Open and close the door five times: five alarms (2 s beep, three blinks), none on closing.
+3. Remove and refit a battery: 5 blinks, the count kept in EEPROM.
+4. Measure the sleep current as below; far above the expected values means a floating pin or a peripheral left on.
 
 :::tip[Instrument it]
 A field sensor has to do two things you never see: last on its battery and recover on its own. Sleep handles the first, dropping the ATmega to microamps between readings so a coin cell lasts; the watchdog handles the second, resetting a node that has hung so it does not silently stop reporting halfway through the season. A monitor you can forget about is one that sleeps deep and restarts itself, then keeps [sending data](/education/iot-systems/) to [siliconwit.io](https://siliconwit.io) without a site visit.
@@ -555,7 +574,9 @@ Measure the sleep current: put a multimeter with a microamp range in series with
 - Asleep with the door closed: about 86 microamps more. The closed reed switch joins the internal pull-up (20K to 50K) to ground, and $3\,\text{V} / 35\,\text{k}\Omega \approx 86\,\mu\text{A}$ flows through it all the time.
 - Awake at 3V and 8 MHz: around 4 to 5 mA.
 
-The device sleeps almost all the time, so the sleep current decides the battery life, and its largest part here is a resistor, not the chip.
+The device sleeps almost all the time, so the sleep current decides the battery life, and its largest part here is a resistor, not the chip. A normally-closed reed switch, open while the magnet is near, removes it: with the door shut no current flows (the pin then reads low when the door opens, so the test in the program turns over).
+
+On its microamp range a meter adds a series resistance (often 100 ohm or more), so the 5 mA of an awake chip can drop half a volt. If the chip resets when it wakes, bridge the meter with a wire while it is awake.
 
 ### Battery Life Estimation
 

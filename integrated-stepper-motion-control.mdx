@@ -107,11 +107,13 @@ Never connect or disconnect the motor while the 12 V supply is on. It can destro
 
 | Part | Connection | Notes |
 |------|-----------|-------|
-| A4988 stepper driver | STEP to PD4, DIR to PD5 | Set current limit before powering motor |
+| A4988 stepper driver | STEP to PD4, DIR to PD5 | Set current limit before powering motor (see below) |
 | NEMA 17 stepper motor | 4 wires to A4988 | 200 steps/rev (1.8 degrees/step) |
 | Limit switch (NO) | PD2 to GND | Normally open, closes at home position |
 | 10K potentiometer | Wiper to PC0 | VCC and GND on outer pins |
 | 12V power supply | A4988 VMOT | Separate from USB 5V |
+
+The current limit is set with the small potentiometer on the A4988 module. Measure the voltage Vref between its wiper and GND; the limit is $I = V_{ref} / (8 \times R_s)$, where $R_s$ is the sense resistor printed near the chip (R050 = 0.05 ohm, R068, R100 = 0.1 ohm). For a 1.0 A motor with R100: $V_{ref} = 1.0 \times 8 \times 0.1 = 0.8$ V. Too much current overheats driver and motor; too little makes it skip steps.
 
 ## Step Pulse Timing
 
@@ -182,6 +184,7 @@ The program is long, but made of blocks you already know. Read the Timer1 ISR fi
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 
 /* --- Pin definitions --- */
 #define STEP_PIN   PD4
@@ -196,6 +199,10 @@ static volatile int32_t target_pos  = 0;
 static volatile uint8_t moving      = 0;
 static volatile uint8_t limit_hit   = 0;
 static volatile uint8_t homing      = 0;
+static volatile uint8_t home_failed = 0;
+static volatile uint16_t home_steps = 0;
+static volatile int32_t home_offset = 0;   /* count when the switch closed */
+#define HOME_MAX_STEPS 10000  /* 400 mm at 25 steps/mm: longer than the axis */
 
 static float steps_per_mm = 25.0;  /* default: 200 steps/rev, 8mm pitch */
 static float feedrate = 300.0;     /* mm/min */
@@ -307,8 +314,17 @@ ISR(TIMER1_COMPA_vect)
         /* Edge seen, or switch already closed when homing began */
         if (limit_hit || !(PIND & (1 << LIMIT_PIN))) {
             timer1_stop();
+            home_offset = current_pos;  /* 0 if no step was lost */
             current_pos = 0;
             target_pos = 0;
+            homing = 0;
+            return;
+        }
+        if (++home_steps > HOME_MAX_STEPS) {
+            /* The switch never closed (broken wire or switch): stop,
+               do not drive the axis into its end for ever */
+            timer1_stop();
+            home_failed = 1;
             homing = 0;
             return;
         }
@@ -347,7 +363,7 @@ ISR(INT0_vect)
    ================================ */
 static void move_to(float pos_mm, float rate_mm_min)
 {
-    int32_t target = (int32_t)(pos_mm * steps_per_mm);
+    int32_t target = lround(pos_mm * steps_per_mm);  /* Nearest step */
     int32_t diff;
 
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
@@ -382,6 +398,8 @@ static void do_home(void)
 {
     uart_puts("Homing...\n");
     limit_hit = 0;
+    home_failed = 0;
+    home_steps = 0;
     homing = 1;
 
     /* Move in negative direction toward limit switch */
@@ -391,9 +409,17 @@ static void do_home(void)
     float steps_sec = (home_speed / 60.0) * steps_per_mm;
     timer1_start(steps_sec);
 
-    while (homing);  /* Wait for the limit switch */
+    while (homing);  /* Wait for the limit switch, or the travel limit */
 
-    uart_puts("Home found. Position reset to 0.\n");
+    if (home_failed) {
+        uart_puts("Homing failed: limit switch not found\n");
+        return;
+    }
+    /* The count when the switch closed: 0 means no step was lost
+       since the last homing (meaningless on the first one) */
+    uart_puts("Home found, count was ");
+    uart_put_i32(home_offset);
+    uart_puts(". Position reset to 0.\n");
 }
 
 /* ================================
@@ -412,6 +438,7 @@ static void jog_check(void)
         PORTD |= (1 << DIR_PIN);   /* Forward */
         speed = (float)(adc - 544) / 480.0 * 600.0;  /* 0-600 mm/min */
     } else {
+        if (!(PIND & (1 << LIMIT_PIN))) return;  /* At the switch: no further */
         PORTD &= ~(1 << DIR_PIN);  /* Reverse */
         speed = (float)(480 - adc) / 480.0 * 600.0;
     }
@@ -533,6 +560,10 @@ static void process_line(const char *line)
                     if (c == 'J' || c == 'j') break;
                 }
             }
+            /* Drop the rest of "J0" and the line end, or the parser
+               would read them as a command */
+            _delay_ms(5);
+            while (uart_available()) (void)uart_getc();
             uart_puts("Jog mode exited.\n");
         }
     } else if (line[0] != '\0') {
@@ -657,6 +688,13 @@ Connect via a serial terminal at 115200 baud. Try these commands in order:
    ```
    Turn the potentiometer. Center = stopped, left = reverse, right = forward. Speed increases with distance from center. Send `J0` to exit.
 </Steps>
+
+### Check it
+
+An open-loop axis can lose steps without a sign, so measure it. Home (`G28`), repeat `G1 X100 F300` and `G0 X0` ten times, and home again: `Home found, count was N` should give N = 0, or 1 to 2 (the switch's own repeatability). A larger N means lost steps: lower `rapid_rate` (with no acceleration ramp a motor stalls if started too fast for its load) or raise the driver current. In a simulation, `G1 X20 F300` gave exactly 500 steps in 3.99 s, and with the switch wire pulled homing stopped after 10,000 steps with `Homing failed: limit switch not found`.
+
+With a normally-open switch a broken wire looks like "not home"; the step limit stops the axis. Field machines use normally-closed limit switches, so a broken wire reads as "pressed" (the test in the program then turns over).
+
 
 ## Calibrating Steps Per Millimeter
 

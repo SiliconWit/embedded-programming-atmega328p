@@ -271,6 +271,8 @@ V = (ADC_value / 1024.0) * V_ref
 
 For AVcc reference (5V): an ADC reading of 512 corresponds to 2.5V, and one step (1 LSB) is $5\,\text{V} / 1024 \approx 4.9\,\text{mV}$. Divide by 1024, the number of steps, not by 1023, the largest reading.
 
+The result is only as right as $V_{ref}$. AVcc is the USB supply, often 4.6 to 5.25 V after the board's diode: 2.40 V reads 512 on 4.80 V and 491 on 5.00 V, 4 % apart, so measure the 5V pin and use that number. The internal 1.1 V reference is steadier but lies between 1.0 and 1.2 V; measure it once on AREF. A two-resistor divider like the LDR circuit is not affected: its voltage moves with VCC, and so does the ruler.
+
 ## Complete Firmware
 
 <InArticleAd />
@@ -286,7 +288,7 @@ Each pass of the loop reads both LDRs, scales each reading to a bar of 0 to 50 p
 #include <stdlib.h>
 #include <string.h>
 
-/* From Lesson 6: framebuf[], spi_init(), oled_init(), oled_flush(),
+/* From the SPI lesson: framebuf[], spi_init(), oled_init(), oled_flush(),
    fb_clear(), fb_draw_char(), fb_draw_string() */
 
 #define OVERSAMPLE 16
@@ -359,7 +361,7 @@ int main(void)
 
         fb_clear();
 
-        /* Labels: the Lesson 6 font holds only digits and ':'.
+        /* Labels: the SPI lesson's font holds only digits and ':'.
            Add glyphs for these letters to font_5x7 and
            fb_draw_char(), or these two calls draw nothing. */
         fb_draw_string(0, 0, "LEFT");
@@ -389,12 +391,21 @@ int main(void)
 }
 ```
 
+### Check it
+
+- Measure A0 and the 5V pin: the screen should show $1024 \times V_{A0} / V_{5V}$ within about 2 steps.
+- Cover the left LDR: its number and bar fall and the arrow points right (`>`); with similar light on both, `=`.
+- Bright light gives numbers near 930 (1K), dark near 93 (100K): bars of about 45 and 4 pixels.
+- In steady light the numbers should move by no more than 1 or 2 between screens.
+
+A simulation with 4.55 V on A0 and 0.45 V on A1 drew bars of 45 and 4 pixels and the `<` arrow.
+
 ## ADC Noise Reduction Sleep Mode
 
 <InArticleAd />
 
 
-Part of the noise comes from the chip itself: the running processor disturbs the supply of the ADC. In ADC Noise Reduction sleep mode the processor stops for one conversion while the ADC keeps working, and its interrupt wakes the processor at the end. Use it when averaging alone does not give a steady reading.
+Part of the noise comes from the chip itself: the running processor disturbs the supply of the ADC. In ADC Noise Reduction sleep mode the processor stops for one conversion while the ADC keeps working, and its interrupt wakes the processor at the end. Use it when averaging alone does not give a steady reading. Any other interrupt, such as a timer tick, also wakes the processor, possibly before the conversion ends, so the code sleeps again until ADSC reads 0.
 
 ```c
 #include <avr/sleep.h>
@@ -411,14 +422,16 @@ static uint16_t adc_read_quiet(uint8_t channel)
     ADCSRA |= (1 << ADIE);  /* Enable ADC interrupt */
     set_sleep_mode(SLEEP_MODE_ADC);
     sei();
-    sleep_mode();            /* Enter sleep, ADC starts automatically */
+    do {
+        sleep_mode();        /* Enter sleep, ADC starts automatically */
+    } while (ADCSRA & (1 << ADSC));  /* Another interrupt woke us: not done */
     ADCSRA &= ~(1 << ADIE); /* Disable ADC interrupt */
     return ADC;
 }
 ```
 
 :::tip[Instrument it]
-The ADC is your bridge to the analog machine. The same code that reads an LDR reads the sensors that report a motor's health: an NTC thermistor on the winding for temperature, an ACS712 or a shunt-plus-amplifier on the supply for current, and a vibration sensor for mechanical trouble. Watching current and temperature together is the cheapest motor monitor there is, since a rising pair means a bearing dragging or a fan failing. An [ATmega](/education/sensor-actuator-interfacing-stm32/) reads them, and through an [ESP32 or STM32 link](/education/iot-systems/) can [alert before the motor burns out](https://siliconwit.io).
+The ADC is your bridge to the analog machine. The same code that reads an LDR reads the sensors that report a motor's health: an NTC thermistor on the winding for temperature, an ACS712 or a shunt-plus-amplifier on the supply for current, and a vibration sensor for mechanical trouble. Watching current and temperature together is the cheapest motor monitor there is, since a rising pair means a bearing dragging or a fan failing. The ATmega328P reads them (the [sensor interfacing course](/education/sensor-actuator-interfacing-stm32/) wires such sensors), and through an [ESP32 or STM32 link](/education/iot-systems/) can [alert before the motor burns out](https://siliconwit.io).
 :::
 
 ## Exercises
